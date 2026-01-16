@@ -1,65 +1,38 @@
-## .NET
+# Build outputs
 bin/
 obj/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-*.userprefs
-
-## Build results
-[Dd]ebug/
-[Rr]elease/
-x64/
-x86/
-[Aa][Rr][Mm]/
-[Aa][Rr][Mm]64/
-bld/
-[Bb]in/
-[Oo]bj/
-[Ll]og/
-[Ll]ogs/
-
-## NuGet
-*.nupkg
-*.snupkg
 nupkg/
-packages/
-.nuget/
 
-## Test results
+# User-specific files
+*.user
+*.userosstore
+*.suo
+
+# Test results
 TestResults/
-[Tt]est[Rr]esult*/
 *.trx
 *.coverage
-*.coveragexml
 
-## Coverage
-coverage/
-*.coverage
-*.coveragexml
-
-## IDE
+# IDE
 .vs/
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
-## macOS
+# OS
 .DS_Store
+Thumbs.db
 
-## Sanitized test outputs
-*-sanitize/
-tests/fixtures/*-sanitize/
+# Package outputs
+*.nupkg
+*.snupkg
 
-## Temporary files
+# Logs
+*.log
+
+# Temporary files
 *.tmp
 *.temp
 
-
-# devibe/unvibe directories
-# These directories contain backups and temporary files from devibe
-.devibe/
-.unvibe/
+# User's custom rules (not the example)
+.codebleach-rules.json
+!tests/**/.codebleach-rules.json

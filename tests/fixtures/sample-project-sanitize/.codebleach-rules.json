@@ -1,0 +1,36 @@
+{
+  "rules": [
+    {
+      "ruleId": "custom_api_keys",
+      "name": "API Keys",
+      "description": "Detects API keys in the format 'api_key_xxxxx'",
+      "pattern": "api_key_[a-zA-Z0-9]{20,}",
+      "prefix": "APIKEY",
+      "severity": "High",
+      "enabled": true,
+      "order": 5
+    },
+    {
+      "ruleId": "custom_jwt_tokens",
+      "name": "JWT Tokens",
+      "description": "Detects JWT tokens",
+      "pattern": "eyJ[A-Za-z0-9-_=]+\\.eyJ[A-Za-z0-9-_=]+\\.[A-Za-z0-9-_=]+",
+      "prefix": "JWT",
+      "severity": "Critical",
+      "enabled": true,
+      "order": 1
+    },
+    {
+      "ruleId": "custom_email_domains",
+      "name": "Internal Email Domains",
+      "description": "Detects internal corporate email addresses",
+      "pattern": "\\b[a-zA-Z0-9._%+-]+@(internal|corp|company)\\.(com|org|net)\\b",
+      "prefix": "EMAIL",
+      "severity": "Medium",
+      "enabled": true,
+      "exceptions": ["admin@internal.com"],
+      "order": 15
+    }
+  ]
+}
+

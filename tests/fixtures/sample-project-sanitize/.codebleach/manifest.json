@@ -1,0 +1,57 @@
+{
+  "Version": "1.0",
+  "SourcePath": "/Users/admin/Dev/YOLOProjects/codebleach/tests/fixtures/sample-project",
+  "DestinationPath": "/Users/admin/Dev/YOLOProjects/codebleach/tests/fixtures/sample-project-sanitize",
+  "CreatedAt": "2026-01-16T02:38:50.478853Z",
+  "RestoredAt": null,
+  "Mappings": {
+    "Forward": {
+      "ProductionDB": "SERVER_0",
+      "api-prod": "SERVER_1",
+      "192.168.1.100": "IP_0",
+      "C:\\Projects\\SecretProject": "PATH_0",
+      "api-prod.internal": "HOST_0",
+      "user_accounts": "TABLE_0",
+      "Server=ProductionDB": "CONNSTR_0",
+      "C:\\\\Projects\\\\SecretProject\\\\logs": "PATH_1",
+      "\\\\Projects\\\\SecretProject\\\\logs\u0022": "PATH_2",
+      "users": "TABLE_1",
+      "C:\\Projects\\SecretProject\\logs\\app.log": "PATH_3"
+    },
+    "Reverse": {
+      "SERVER_0": "ProductionDB",
+      "SERVER_1": "api-prod",
+      "IP_0": "192.168.1.100",
+      "PATH_0": "C:\\Projects\\SecretProject",
+      "HOST_0": "api-prod.internal",
+      "TABLE_0": "user_accounts",
+      "CONNSTR_0": "Server=ProductionDB",
+      "PATH_1": "C:\\\\Projects\\\\SecretProject\\\\logs",
+      "PATH_2": "\\\\Projects\\\\SecretProject\\\\logs\u0022",
+      "TABLE_1": "users",
+      "PATH_3": "C:\\Projects\\SecretProject\\logs\\app.log"
+    },
+    "Counters": {
+      "SERVER": 2,
+      "IP": 1,
+      "PATH": 4,
+      "HOST": 1,
+      "TABLE": 2,
+      "CONNSTR": 1
+    }
+  },
+  "ProcessedFiles": [
+    "README.md",
+    "src/appsettings.json",
+    "src/DbContext.cs",
+    "src/Program.cs"
+  ],
+  "Stats": {
+    "TotalFiles": 5,
+    "ProcessedFiles": 4,
+    "SkippedFiles": 1,
+    "TotalReplacements": 26,
+    "UniqueValuesReplaced": 11,
+    "ProcessingTimeMs": 95
+  }
+}

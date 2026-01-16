@@ -1,0 +1,40 @@
+{
+  "$schema": "https://raw.githubusercontent.com/YOLOVibeCode/codebleach/main/schema/rules.schema.json",
+  "_comment": "This is an example custom rules file. Copy to .codebleach-rules.json to use.",
+  "rules": [
+    {
+      "ruleId": "my_custom_tables",
+      "name": "My Custom Table Pattern",
+      "description": "Example: Detects your specific table naming pattern",
+      "type": "regex",
+      "pattern": "\\bMYTBL_\\w+\\b",
+      "prefix": "TBL",
+      "severity": "Medium",
+      "enabled": true,
+      "order": 100
+    },
+    {
+      "ruleId": "my_api_keys",
+      "name": "My API Keys",
+      "description": "Example: Custom API key pattern",
+      "type": "regex",
+      "pattern": "\\bsk-[a-zA-Z0-9]{32}\\b",
+      "prefix": "APIKEY",
+      "severity": "Critical",
+      "enabled": true,
+      "order": 10
+    },
+    {
+      "ruleId": "my_internal_domains",
+      "name": "My Internal Domains",
+      "description": "Example: Your company's internal domain names",
+      "type": "regex",
+      "pattern": "\\w+\\.mycompany\\.(com|net|local)\\b",
+      "prefix": "DOMAIN",
+      "severity": "High",
+      "enabled": true,
+      "order": 20
+    }
+  ]
+}
+

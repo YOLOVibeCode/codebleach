@@ -1,0 +1,45 @@
+{
+  "docsFolder": {
+    "path": "docs",
+    "exists": false
+  },
+  "scriptsFolder": {
+    "path": "scripts",
+    "exists": false
+  },
+  "rootFileConventions": {
+    "readmeInRoot": true,
+    "changelogInRoot": false,
+    "contributingInRoot": false,
+    "licenseInRoot": false,
+    "customRootFiles": [
+      "CUSTOM_RULES.md",
+      "IMPLEMENTATION_PLAN.md",
+      "PUBLICATION_STATUS.md",
+      "RELEASE_NOTES.md",
+      "SANITIZATION_DEMO.md",
+      "SPECIFICATION.md",
+      "SUCCESS.md"
+    ]
+  },
+  "testConventions": {
+    "location": "centralized",
+    "folderName": "tests"
+  },
+  "recommendations": {
+    "shouldCreateDocsFolder": true,
+    "shouldCreateScriptsFolder": true,
+    "keepFilesInRoot": [
+      "README.md",
+      "CHANGELOG.md",
+      "CONTRIBUTING.md",
+      "LICENSE",
+      "CODE_OF_CONDUCT.md"
+    ],
+    "recommendedDocsStructure": [
+      "specifications",
+      "guides"
+    ]
+  },
+  "analyzedAt": "2026-01-16T03:24:06.167Z"
+}
