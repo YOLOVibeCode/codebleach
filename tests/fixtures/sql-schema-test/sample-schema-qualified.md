@@ -1,0 +1,37 @@
+# Schema-Qualified References
+
+> Fictional test data for CodeBleach schema.table sanitization.
+
+## DATABASE.TABLE Pattern
+
+```sql
+SELECT CLAIM_ID, STATUS_CD 
+FROM SRCDB.CLAIMS_DATA
+WHERE STATUS_CD = 'ACTIVE';
+
+INSERT INTO DESTDB.RESULTS_DATA (ID, STATUS)
+SELECT ID, STATUS FROM SRCDB.RAW_EVENTS;
+```
+
+## DATABASE.dbo.TABLE Pattern
+
+```sql
+INSERT INTO DESTDB.dbo.TB00999 (CLAIM_ID, STATUS_CD)
+SELECT CLAIM_ID, STATUS_CD 
+FROM PRODDB.dbo.TB01234;
+
+-- Cross-database join
+SELECT a.ID, b.NAME
+FROM SRCDB.dbo.TB00123 a
+JOIN DESTDB.dbo.TB00456 b ON a.ID = b.ID;
+```
+
+## Mixed References
+
+```sql
+-- Load from SRCDB.CLAIMS_DATA into DESTDB.dbo.TB00999
+-- Using server PRODSRV01
+SELECT * FROM SRCDB.CLAIMS_DATA;
+INSERT INTO DESTDB.dbo.TB00999 SELECT * FROM TB00123;
+```
+

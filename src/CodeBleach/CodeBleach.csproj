@@ -13,7 +13,7 @@
     
     <!-- NuGet Metadata -->
     <PackageId>CodeBleach</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>YOLOVibeCode</Authors>
     <Description>Dead simple sanitization utility for sharing code with AI assistants</Description>
     <PackageTags>cli;sanitization;security;ai;privacy;codebleach</PackageTags>

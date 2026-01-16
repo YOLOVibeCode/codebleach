@@ -1,8 +1,11 @@
+using System.Text.Json.Serialization;
+
 namespace CodeBleach.Core.Models;
 
 /// <summary>
 /// Severity level for sanitization rules.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum RuleSeverity
 {
     /// <summary>Low severity - informational only</summary>

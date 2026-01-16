@@ -70,36 +70,57 @@ public sealed class Sanitizer : ISanitizer
             }
         }
         
-        // Build result by replacing matches
-        // Sort matches by position and rebuild string
-        var sortedMatches = matches.OrderBy(m => m.StartIndex).ToList();
-        var resultBuilder = new StringBuilder();
-        var lastIndex = 0;
+        // Sort matches: by position first, then longer matches take priority
+        // This ensures "Server=PRODSRV01" is preferred over just "PRODSRV01"
+        var sortedMatches = matches
+            .OrderBy(m => m.StartIndex)
+            .ThenByDescending(m => m.Length)
+            .ToList();
+        
+        // Filter out overlapping matches (keep the first/longest one)
+        var nonOverlappingMatches = new List<SanitizationMatch>();
+        var lastEndIndex = 0;
         
         foreach (var match in sortedMatches)
         {
-            // Add content before this match
-            if (match.StartIndex > lastIndex)
+            // Skip if this match overlaps with a previously accepted match
+            if (match.StartIndex < lastEndIndex)
             {
-                resultBuilder.Append(content, lastIndex, match.StartIndex - lastIndex);
+                continue;
+            }
+            
+            nonOverlappingMatches.Add(match);
+            lastEndIndex = match.StartIndex + match.Length;
+        }
+        
+        // Build result by replacing non-overlapping matches
+        var resultBuilder = new StringBuilder();
+        var currentIndex = 0;
+        
+        foreach (var match in nonOverlappingMatches)
+        {
+            // Add content before this match
+            if (match.StartIndex > currentIndex)
+            {
+                resultBuilder.Append(content, currentIndex, match.StartIndex - currentIndex);
             }
             
             // Add the alias
             resultBuilder.Append(match.Alias);
-            lastIndex = match.StartIndex + match.Length;
+            currentIndex = match.StartIndex + match.Length;
         }
         
         // Add remaining content
-        if (lastIndex < content.Length)
+        if (currentIndex < content.Length)
         {
-            resultBuilder.Append(content, lastIndex, content.Length - lastIndex);
+            resultBuilder.Append(content, currentIndex, content.Length - currentIndex);
         }
         
         return new SanitizationResult
         {
             Content = resultBuilder.ToString(),
-            WasSanitized = matches.Count > 0,
-            Matches = matches
+            WasSanitized = nonOverlappingMatches.Count > 0,
+            Matches = nonOverlappingMatches
         };
     }
 }

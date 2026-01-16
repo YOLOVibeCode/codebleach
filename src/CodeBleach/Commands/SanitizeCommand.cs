@@ -89,14 +89,14 @@ public static class SanitizeCommand
         var customRulesPath = CustomRuleLoader.FindConfigFile(source.FullName);
         if (customRulesPath != null)
         {
-            var customRules = CustomRuleLoader.LoadFromFile(customRulesPath);
+            var customRules = CustomRuleLoader.LoadFromFile(customRulesPath).ToList();
             foreach (var rule in customRules)
             {
                 ruleRegistry.AddRule(rule);
             }
             if (verbose)
             {
-                Console.WriteLine($"Loaded custom rules from: {customRulesPath}");
+                Console.WriteLine($"Loaded {customRules.Count} custom rules from: {customRulesPath}");
             }
         }
         

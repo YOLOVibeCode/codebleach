@@ -1,0 +1,9 @@
+# Schema-Qualified Name Patterns
+# Matches DATABASE.TABLE and DATABASE.dbo.TABLE
+
+# Pattern: DATABASE.dbo.TABLE (most specific, check first)
+\b[A-Z][A-Z0-9_]+\.dbo\.[A-Z][A-Z0-9_]+\b
+
+# Pattern: DATABASE.TABLE (e.g., SRCDB.CLAIMS_DATA)
+\b[A-Z][A-Z0-9_]+\.[A-Z][A-Z0-9_]+\b
+

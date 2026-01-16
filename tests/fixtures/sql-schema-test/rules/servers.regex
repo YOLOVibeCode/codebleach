@@ -1,0 +1,13 @@
+# Server Name Patterns
+# Each non-comment line is a regex pattern
+# Multiple patterns are combined with OR (|)
+
+# Pattern: *SRV## (e.g., PRODSRV01, STGSRV02)
+\b[A-Z]+SRV\d{1,3}\b
+
+# Pattern: *SVR## (e.g., SQLSVR01, DBSVR02)
+\b[A-Z]+SVR\d{1,3}\b
+
+# Pattern: *SERVER## (e.g., DBSERVER01, FILESERVER02)
+\b[A-Z]+SERVER\d{1,3}\b
+

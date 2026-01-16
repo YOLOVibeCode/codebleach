@@ -1,0 +1,45 @@
+{
+  "rules": [
+    {
+      "ruleId": "inline_tables",
+      "name": "Prefixed Tables (Inline Regex)",
+      "description": "Detects TB/TA prefixed table names using inline regex",
+      "type": "regex",
+      "pattern": "\\b(TB|TA)\\d{4,6}\\b",
+      "prefix": "TBL",
+      "severity": "Medium",
+      "order": 10
+    },
+    {
+      "ruleId": "file_servers",
+      "name": "Server Names (From File)",
+      "description": "Detects server names using patterns from external .regex file",
+      "type": "regexFile",
+      "patternFile": "rules/servers.regex",
+      "prefix": "SRV",
+      "severity": "High",
+      "order": 20
+    },
+    {
+      "ruleId": "js_databases",
+      "name": "Database Names (JavaScript)",
+      "description": "Detects database names using JavaScript function",
+      "type": "javascript",
+      "scriptFile": "rules/databases.js",
+      "prefix": "DB",
+      "severity": "High",
+      "order": 30
+    },
+    {
+      "ruleId": "file_schemas",
+      "name": "Schema-Qualified Names (From File)",
+      "description": "Detects DATABASE.TABLE and DATABASE.dbo.TABLE patterns",
+      "type": "regexFile",
+      "patternFile": "rules/schemas.regex",
+      "prefix": "SCHEMA",
+      "severity": "High",
+      "order": 5
+    }
+  ]
+}
+

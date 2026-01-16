@@ -2,6 +2,46 @@
 
 **Dead simple sanitization utility for sharing code with AI assistants**
 
+<!-- AUTO-INDEX-SECTION -->
+<!--
+🤖 AI ASSISTANT - PROJECT NAVIGATION GUIDE
+============================================
+
+To fully understand and work with this project, follow this systematic approach:
+
+📚 STEP 1 - READ DOCUMENTATION: documents/INDEX.md
+   This is your PRIMARY source for understanding the project:
+   • Complete index of ALL project documentation
+   • Organized by category (specifications, guides, architecture, etc.)
+   • Read specifications FIRST to understand system design
+   • Then read guides for implementation details
+   • Every document is indexed with descriptions and word counts
+   • This is the authoritative source - do not search randomly
+
+💡 KEY PRINCIPLES:
+   • Both indexes are auto-generated and always up-to-date
+   • Never search randomly - use the indexes as navigation
+   • Read documentation before writing code
+   • Check scripts before running manual commands
+   • Word counts help prioritize what to read first
+
+✅ AFTER READING BOTH INDEXES:
+   You will have complete knowledge of:
+   • System architecture and design decisions
+   • Implementation details and best practices
+   • All available automation and tooling
+   • Proper setup, build, test, and deployment procedures
+
+============================================
+-->
+
+## 📚 Documentation & Scripts
+
+Browse the complete **[Documentation Index](documents/INDEX.md)** for all project documentation.
+
+<!-- AUTO-INDEX-SECTION -->
+
+
 CodeBleach is a .NET global tool that sanitizes sensitive data from your codebase before sharing it with AI assistants like ChatGPT, Claude, or GitHub Copilot. It creates a sanitized copy of your project, replacing sensitive values (database names, IPs, API keys, etc.) with safe aliases, and can restore original values when AI-modified code is returned.
 
 ## 🎯 Use Cases

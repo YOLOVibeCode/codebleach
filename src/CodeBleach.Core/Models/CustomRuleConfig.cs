@@ -14,6 +14,22 @@ public record CustomRuleConfig
 }
 
 /// <summary>
+/// The type of rule definition.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RuleType
+{
+    /// <summary>Inline regex pattern in the JSON</summary>
+    Regex,
+    
+    /// <summary>Regex pattern loaded from external .regex file</summary>
+    RegexFile,
+    
+    /// <summary>JavaScript function loaded from external .js file</summary>
+    JavaScript
+}
+
+/// <summary>
 /// Definition of a custom rule.
 /// </summary>
 public record CustomRuleDefinition
@@ -27,8 +43,29 @@ public record CustomRuleDefinition
     [JsonPropertyName("description")]
     public string? Description { get; init; }
     
+    /// <summary>
+    /// The type of rule: "regex" (default), "regexFile", or "javascript"
+    /// </summary>
+    [JsonPropertyName("type")]
+    public RuleType Type { get; init; } = RuleType.Regex;
+    
+    /// <summary>
+    /// Inline regex pattern (used when type is "regex")
+    /// </summary>
     [JsonPropertyName("pattern")]
-    public required string Pattern { get; init; }
+    public string? Pattern { get; init; }
+    
+    /// <summary>
+    /// Path to external pattern file (used when type is "regexFile")
+    /// </summary>
+    [JsonPropertyName("patternFile")]
+    public string? PatternFile { get; init; }
+    
+    /// <summary>
+    /// Path to JavaScript file (used when type is "javascript")
+    /// </summary>
+    [JsonPropertyName("scriptFile")]
+    public string? ScriptFile { get; init; }
     
     [JsonPropertyName("prefix")]
     public required string Prefix { get; init; }

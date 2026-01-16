@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "ruleId": "test_tables",
+      "name": "Test Tables",
+      "type": "regex",
+      "pattern": "\\bTB\\d{5}\\b",
+      "prefix": "TBL",
+      "enabled": true
+    }
+  ]
+}
+
