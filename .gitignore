@@ -1,0 +1,60 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## NuGet
+*.nupkg
+*.snupkg
+nupkg/
+packages/
+.nuget/
+
+## Test results
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+## Coverage
+coverage/
+*.coverage
+*.coveragexml
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+## macOS
+.DS_Store
+
+## Sanitized test outputs
+*-sanitize/
+tests/fixtures/*-sanitize/
+
+## Temporary files
+*.tmp
+*.temp
+

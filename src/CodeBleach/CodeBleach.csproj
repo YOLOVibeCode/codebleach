@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    
+    <!-- Global Tool Configuration -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>codebleach</ToolCommandName>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+    
+    <!-- NuGet Metadata -->
+    <PackageId>CodeBleach</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>YOLOVibeCode</Authors>
+    <Description>Dead simple sanitization utility for sharing code with AI assistants</Description>
+    <PackageTags>cli;sanitization;security;ai;privacy;codebleach</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/YOLOVibeCode/codebleach</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CodeBleach.Core\CodeBleach.Core.csproj" />
+  </ItemGroup>
+</Project>

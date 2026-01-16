@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CodeBleach.Core/CodeBleach.Core.csproj" />
+    <Project Path="src/CodeBleach/CodeBleach.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CodeBleach.IntegrationTests/CodeBleach.IntegrationTests.csproj" />
+    <Project Path="tests/CodeBleach.Tests/CodeBleach.Tests.csproj" />
+  </Folder>
+</Solution>
