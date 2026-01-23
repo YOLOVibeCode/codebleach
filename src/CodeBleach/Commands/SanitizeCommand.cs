@@ -25,6 +25,9 @@ public static class SanitizeCommand
         var forceOption = new Option<bool>(
             new[] { "--force", "-f" },
             "Overwrite existing output directory");
+        var rulesOption = new Option<FileInfo?>(
+            new[] { "--rules", "-r" },
+            "Path to custom rules file (overrides auto-discovery)");
         
         var command = new Command("sanitize", "Sanitize a directory")
         {
@@ -32,13 +35,14 @@ public static class SanitizeCommand
             outputOption,
             dryRunOption,
             verboseOption,
-            forceOption
+            forceOption,
+            rulesOption
         };
         
-        command.SetHandler(async (source, output, dryRun, verbose, force) =>
+        command.SetHandler(async (source, output, dryRun, verbose, force, rulesFile) =>
         {
-            await HandleAsync(source, output, dryRun, verbose, force);
-        }, sourceArg, outputOption, dryRunOption, verboseOption, forceOption);
+            await HandleAsync(source, output, dryRun, verbose, force, rulesFile);
+        }, sourceArg, outputOption, dryRunOption, verboseOption, forceOption, rulesOption);
         
         return command;
     }
@@ -48,7 +52,8 @@ public static class SanitizeCommand
         DirectoryInfo? output,
         bool dryRun,
         bool verbose,
-        bool force)
+        bool force,
+        FileInfo? rulesFile)
     {
         if (!source.Exists)
         {
@@ -82,22 +87,40 @@ public static class SanitizeCommand
         
         // Setup services
         var ruleRegistry = new RuleRegistry();
+        
+        // 1. Load built-in rules first (lowest priority)
         foreach (var rule in BuiltInRules.All)
             ruleRegistry.AddRule(rule);
         
-        // Load custom rules if present
-        var customRulesPath = CustomRuleLoader.FindConfigFile(source.FullName);
-        if (customRulesPath != null)
+        // 2. Load custom rules from hierarchy (global -> explicit -> project-local)
+        var configLocator = new GlobalConfigLocator();
+        var configPaths = configLocator.GetConfigFilePaths(
+            source.FullName, 
+            rulesFile?.FullName).ToList();
+        
+        if (configPaths.Any())
         {
-            var customRules = CustomRuleLoader.LoadFromFile(customRulesPath).ToList();
+            var customRules = CustomRuleLoader.LoadFromMultipleFiles(configPaths).ToList();
+            
             foreach (var rule in customRules)
             {
                 ruleRegistry.AddRule(rule);
             }
+            
             if (verbose)
             {
-                Console.WriteLine($"Loaded {customRules.Count} custom rules from: {customRulesPath}");
+                Console.WriteLine($"Loaded {customRules.Count} custom rules from:");
+                foreach (var path in configPaths)
+                {
+                    Console.WriteLine($"  - {path}");
+                }
+                Console.WriteLine();
             }
+        }
+        else if (verbose)
+        {
+            Console.WriteLine("No custom rules loaded (using built-in rules only)");
+            Console.WriteLine();
         }
         
         var sanitizer = new Sanitizer(ruleRegistry);

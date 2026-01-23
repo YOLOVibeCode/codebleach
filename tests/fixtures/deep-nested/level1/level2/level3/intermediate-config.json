@@ -1,0 +1,19 @@
+{
+  "description": "Intermediate level configuration at level 3",
+  "parentService": {
+    "endpoint": "https://parent-svc.internal.acme.com",
+    "database": "HRDatabase"
+  },
+  "childServices": [
+    {
+      "name": "user-service",
+      "host": "APPSRV01.acme-corp.com",
+      "ip": "10.50.101.10"
+    },
+    {
+      "name": "order-service", 
+      "host": "APPSRV02.acme-corp.com",
+      "ip": "10.50.101.11"
+    }
+  ]
+}

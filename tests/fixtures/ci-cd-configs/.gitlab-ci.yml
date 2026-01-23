@@ -1,0 +1,72 @@
+# GitLab CI/CD Configuration
+# Contains sensitive server names and deployment targets
+
+stages:
+  - build
+  - test
+  - deploy-staging
+  - deploy-production
+
+variables:
+  DOCKER_REGISTRY: registry.acme-corp.com
+  DATABASE_SERVER: PRODSRV01.acme-corp.com
+  STAGING_DB_SERVER: STGSRV01.internal.net
+  
+build:
+  stage: build
+  script:
+    - docker build -t $DOCKER_REGISTRY/enterprise-app:$CI_COMMIT_SHA .
+    - docker push $DOCKER_REGISTRY/enterprise-app:$CI_COMMIT_SHA
+  tags:
+    - docker-runner-prod-01
+
+test:
+  stage: test
+  script:
+    - dotnet test
+  variables:
+    TEST_DB_SERVER: DEVSRV01.corp.acme.net
+    TEST_DB_NAME: DBZMEW_TEST
+    TEST_REDIS_HOST: 192.168.2.100
+
+deploy_staging:
+  stage: deploy-staging
+  script:
+    - kubectl config use-context staging-cluster
+    - helm upgrade --install enterprise-app ./charts/enterprise-app \
+        --namespace staging \
+        --set database.server=STGSRV01.internal.net \
+        --set database.name=DBZMEW_STG \
+        --set redis.host=192.168.1.100
+  environment:
+    name: staging
+    url: https://staging.acme-corp.com
+  only:
+    - develop
+
+deploy_production:
+  stage: deploy-production
+  script:
+    - kubectl config use-context production-cluster
+    - helm upgrade --install enterprise-app ./charts/enterprise-app \
+        --namespace production \
+        --set database.server=PRODSRV01.acme-corp.com \
+        --set database.name=DBZMEW \
+        --set database.replica=PRODSRV02.acme-corp.com \
+        --set redis.host=10.50.100.10 \
+        --set linkedServer.host=LINKEDSRV01.acme-corp.com \
+        --set linkedServer.database=DBZBHI
+  environment:
+    name: production
+    url: https://api.acme-corp.com
+  when: manual
+  only:
+    - main
+
+# Secrets retrieved from Vault
+.vault_secrets: &vault_secrets
+  secrets:
+    DATABASE_PASSWORD:
+      vault: secret/data/production/database/password@secrets
+    API_KEY:
+      vault: secret/data/production/api-keys/main@secrets

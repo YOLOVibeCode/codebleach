@@ -1,0 +1,30 @@
+{
+  "application": {
+    "name": "DeepNestedApp",
+    "version": "1.0.0"
+  },
+  "database": {
+    "primary": {
+      "server": "PRODSRV01.acme-corp.com",
+      "name": "DBZMEW",
+      "port": 1433
+    },
+    "replica": {
+      "server": "PRODSRV02.acme-corp.com",
+      "name": "DBZMEW",
+      "port": 1433
+    }
+  },
+  "cache": {
+    "host": "10.50.100.50",
+    "port": 6379
+  },
+  "linkedServers": [
+    {
+      "name": "LINKEDSRV01",
+      "database": "DBZBHI",
+      "purpose": "Business Intelligence"
+    }
+  ],
+  "serviceAccount": "ACME\\svc_deepnested"
+}

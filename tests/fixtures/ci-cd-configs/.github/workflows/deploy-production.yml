@@ -1,0 +1,60 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: registry.acme-corp.com
+  DATABASE_SERVER: PRODSRV01.acme-corp.com
+  DATABASE_NAME: DBZMEW
+  
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/GitHubActionsRole
+          aws-region: us-east-1
+      
+      - name: Login to Container Registry
+        run: |
+          docker login ${{ env.REGISTRY }} -u ${{ secrets.REGISTRY_USER }} -p ${{ secrets.REGISTRY_TOKEN }}
+      
+      - name: Build and push
+        run: |
+          docker build -t ${{ env.REGISTRY }}/enterprise-app:${{ github.sha }} .
+          docker push ${{ env.REGISTRY }}/enterprise-app:${{ github.sha }}
+      
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl config use-context production-cluster
+          
+          helm upgrade --install enterprise-app ./charts/enterprise-app \
+            --namespace production \
+            --set image.repository=${{ env.REGISTRY }}/enterprise-app \
+            --set image.tag=${{ github.sha }} \
+            --set database.server=PRODSRV01.acme-corp.com \
+            --set database.name=DBZMEW \
+            --set database.replicaServer=PRODSRV02.acme-corp.com \
+            --set redis.host=10.50.100.10 \
+            --set linkedServer=LINKEDSRV01.acme-corp.com
+      
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/enterprise-app -n production
+          curl -f https://api.acme-corp.com/health || exit 1
+      
+      - name: Notify Slack
+        if: always()
+        run: |
+          curl -X POST https://hooks.slack.internal.acme.com/services/xxx \
+            -H 'Content-Type: application/json' \
+            -d '{"text": "Deployment to production completed"}'

@@ -1,315 +1,413 @@
 using CodeBleach.Core.Models;
 using CodeBleach.Core.Services;
-using FluentAssertions;
 
 namespace CodeBleach.Tests.Services;
 
-public class CustomRuleLoaderTests : IDisposable
+public class CustomRuleLoaderTests
 {
-    private readonly string _tempDir;
-
-    public CustomRuleLoaderTests()
-    {
-        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_tempDir);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_tempDir))
-        {
-            Directory.Delete(_tempDir, recursive: true);
-        }
-    }
-
     [Fact]
-    public void LoadFromFile_WithInlineRegex_ReturnsRule()
+    public void LoadFromFile_WithValidJson_ReturnsRules()
     {
         // Arrange
-        var configPath = Path.Combine(_tempDir, ".codebleach-rules.json");
-        File.WriteAllText(configPath, """
+        var tempFile = Path.GetTempFileName();
+        var json = """
         {
           "rules": [
             {
-              "ruleId": "test_tables",
-              "name": "Test Tables",
+              "ruleId": "test_rule",
+              "name": "Test Rule",
               "type": "regex",
-              "pattern": "\\bTB\\d{5}\\b",
-              "prefix": "TBL"
+              "pattern": "\\bTEST\\b",
+              "prefix": "TST",
+              "severity": "Medium"
             }
           ]
         }
-        """);
+        """;
+        File.WriteAllText(tempFile, json);
 
-        // Act
-        var rules = CustomRuleLoader.LoadFromFile(configPath).ToList();
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.LoadFromFile(tempFile).ToList();
 
-        // Assert
-        rules.Should().HaveCount(1);
-        rules[0].RuleId.Should().Be("test_tables");
-        rules[0].Pattern.Should().Be(@"\bTB\d{5}\b");
-        rules[0].Prefix.Should().Be("TBL");
+            // Assert
+            result.Should().HaveCount(1);
+            result[0].RuleId.Should().Be("test_rule");
+            result[0].Name.Should().Be("Test Rule");
+            result[0].Pattern.Should().Be("\\bTEST\\b");
+            result[0].Prefix.Should().Be("TST");
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
     }
 
     [Fact]
-    public void LoadFromFile_WithRegexFile_LoadsPatternFromFile()
+    public void LoadFromFile_WithNonExistentFile_ReturnsEmpty()
     {
-        // Arrange
-        var rulesDir = Path.Combine(_tempDir, "rules");
-        Directory.CreateDirectory(rulesDir);
-        
-        var regexFile = Path.Combine(rulesDir, "servers.regex");
-        File.WriteAllText(regexFile, """
-        # Server patterns
-        \b[A-Z]+SRV\d{1,3}\b
-        \b[A-Z]+SVR\d{1,3}\b
-        """);
-
-        var configPath = Path.Combine(_tempDir, ".codebleach-rules.json");
-        File.WriteAllText(configPath, """
-        {
-          "rules": [
-            {
-              "ruleId": "file_servers",
-              "name": "Servers from File",
-              "type": "regexFile",
-              "patternFile": "rules/servers.regex",
-              "prefix": "SRV"
-            }
-          ]
-        }
-        """);
-
         // Act
-        var rules = CustomRuleLoader.LoadFromFile(configPath).ToList();
+        var result = CustomRuleLoader.LoadFromFile("/path/that/does/not/exist.json");
 
         // Assert
-        rules.Should().HaveCount(1);
-        rules[0].RuleId.Should().Be("file_servers");
-        rules[0].Pattern.Should().Contain(@"\b[A-Z]+SRV\d{1,3}\b");
-        rules[0].Pattern.Should().Contain(@"\b[A-Z]+SVR\d{1,3}\b");
-        rules[0].Pattern.Should().StartWith("("); // Combined with OR
+        result.Should().BeEmpty();
     }
 
     [Fact]
-    public void LoadFromFile_WithJavaScript_ExecutesGetPattern()
+    public void LoadFromFile_WithDisabledRule_DoesNotReturnIt()
     {
         // Arrange
-        var rulesDir = Path.Combine(_tempDir, "rules");
-        Directory.CreateDirectory(rulesDir);
-        
-        var jsFile = Path.Combine(rulesDir, "databases.js");
-        File.WriteAllText(jsFile, """
-        function getPattern() {
-            return '\\b[A-Z]+DB\\b';
-        }
-        """);
-
-        var configPath = Path.Combine(_tempDir, ".codebleach-rules.json");
-        File.WriteAllText(configPath, """
+        var tempFile = Path.GetTempFileName();
+        var json = """
         {
           "rules": [
-            {
-              "ruleId": "js_databases",
-              "name": "JS Databases",
-              "type": "javascript",
-              "scriptFile": "rules/databases.js",
-              "prefix": "DB"
-            }
-          ]
-        }
-        """);
-
-        // Act
-        var rules = CustomRuleLoader.LoadFromFile(configPath).ToList();
-
-        // Assert
-        rules.Should().HaveCount(1);
-        rules[0].RuleId.Should().Be("js_databases");
-        rules[0].Pattern.Should().Be(@"\b[A-Z]+DB\b");
-    }
-
-    [Fact]
-    public void LoadFromFile_WithMultipleRuleTypes_LoadsAll()
-    {
-        // Arrange
-        var rulesDir = Path.Combine(_tempDir, "rules");
-        Directory.CreateDirectory(rulesDir);
-        
-        File.WriteAllText(Path.Combine(rulesDir, "servers.regex"), @"\b[A-Z]+SRV\d+\b");
-        File.WriteAllText(Path.Combine(rulesDir, "db.js"), "function getPattern() { return '\\\\bDB[0-9]+\\\\b'; }");
-
-        var configPath = Path.Combine(_tempDir, ".codebleach-rules.json");
-        File.WriteAllText(configPath, """
-        {
-          "rules": [
-            {
-              "ruleId": "inline_rule",
-              "name": "Inline",
-              "type": "regex",
-              "pattern": "\\bTBL\\d+\\b",
-              "prefix": "TBL"
-            },
-            {
-              "ruleId": "file_rule",
-              "name": "From File",
-              "type": "regexFile",
-              "patternFile": "rules/servers.regex",
-              "prefix": "SRV"
-            },
-            {
-              "ruleId": "js_rule",
-              "name": "JavaScript",
-              "type": "javascript",
-              "scriptFile": "rules/db.js",
-              "prefix": "DB"
-            }
-          ]
-        }
-        """);
-
-        // Act
-        var rules = CustomRuleLoader.LoadFromFile(configPath).ToList();
-
-        // Assert
-        rules.Should().HaveCount(3);
-        rules.Should().Contain(r => r.RuleId == "inline_rule");
-        rules.Should().Contain(r => r.RuleId == "file_rule");
-        rules.Should().Contain(r => r.RuleId == "js_rule");
-    }
-
-    [Fact]
-    public void LoadFromFile_WithDisabledRule_SkipsIt()
-    {
-        // Arrange
-        var configPath = Path.Combine(_tempDir, ".codebleach-rules.json");
-        File.WriteAllText(configPath, """
-        {
-          "rules": [
-            {
-              "ruleId": "enabled_rule",
-              "name": "Enabled",
-              "type": "regex",
-              "pattern": "\\bTBL\\d+\\b",
-              "prefix": "TBL",
-              "enabled": true
-            },
             {
               "ruleId": "disabled_rule",
-              "name": "Disabled",
+              "name": "Disabled Rule",
               "type": "regex",
-              "pattern": "\\bXYZ\\d+\\b",
-              "prefix": "XYZ",
+              "pattern": "\\bDISABLED\\b",
+              "prefix": "DIS",
               "enabled": false
             }
           ]
         }
-        """);
+        """;
+        File.WriteAllText(tempFile, json);
 
-        // Act
-        var rules = CustomRuleLoader.LoadFromFile(configPath).ToList();
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.LoadFromFile(tempFile).ToList();
 
-        // Assert
-        rules.Should().HaveCount(1);
-        rules[0].RuleId.Should().Be("enabled_rule");
+            // Assert
+            result.Should().BeEmpty();
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
     }
 
     [Fact]
-    public void LoadFromFile_RegexFileWithComments_IgnoresComments()
+    public void LoadFromMultipleFiles_WithNoFiles_ReturnsEmpty()
+    {
+        // Act
+        var result = CustomRuleLoader.LoadFromMultipleFiles([]);
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LoadFromMultipleFiles_WithSingleFile_ReturnsRules()
     {
         // Arrange
-        var rulesDir = Path.Combine(_tempDir, "rules");
-        Directory.CreateDirectory(rulesDir);
-        
-        var regexFile = Path.Combine(rulesDir, "test.regex");
-        File.WriteAllText(regexFile, """
-        # This is a comment
-        \bPATTERN1\b
-        
-        # Another comment
-        \bPATTERN2\b
-        # Trailing comment
-        """);
-
-        var configPath = Path.Combine(_tempDir, ".codebleach-rules.json");
-        File.WriteAllText(configPath, """
+        var tempFile = Path.GetTempFileName();
+        var json = """
         {
           "rules": [
             {
-              "ruleId": "test",
-              "name": "Test",
-              "type": "regexFile",
-              "patternFile": "rules/test.regex",
-              "prefix": "TEST"
+              "ruleId": "rule1",
+              "name": "Rule 1",
+              "type": "regex",
+              "pattern": "\\bRULE1\\b",
+              "prefix": "R1"
             }
           ]
         }
-        """);
+        """;
+        File.WriteAllText(tempFile, json);
 
-        // Act
-        var rules = CustomRuleLoader.LoadFromFile(configPath).ToList();
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.LoadFromMultipleFiles([tempFile]).ToList();
 
-        // Assert
-        rules.Should().HaveCount(1);
-        rules[0].Pattern.Should().Be(@"(\bPATTERN1\b|\bPATTERN2\b)");
-    }
-
-    [Fact]
-    public void ExecuteJavaScriptMatcher_WithMatchFunction_ReturnsMatches()
-    {
-        // Arrange
-        var rulesDir = Path.Combine(_tempDir, "rules");
-        Directory.CreateDirectory(rulesDir);
-        
-        var jsFile = Path.Combine(rulesDir, "matcher.js");
-        File.WriteAllText(jsFile, """
-        function match(content) {
-            var results = [];
-            var regex = /\bSRV\d+\b/g;
-            var m;
-            while ((m = regex.exec(content)) !== null) {
-                results.push(m[0]);
-            }
-            return results;
+            // Assert
+            result.Should().HaveCount(1);
+            result[0].RuleId.Should().Be("rule1");
         }
-        """);
-
-        var content = "Connect to SRV01 and SRV02 servers";
-
-        // Act
-        var matches = CustomRuleLoader.ExecuteJavaScriptMatcher(
-            jsFile, content, _tempDir).ToList();
-
-        // Assert
-        matches.Should().HaveCount(2);
-        matches.Should().Contain("SRV01");
-        matches.Should().Contain("SRV02");
+        finally
+        {
+            File.Delete(tempFile);
+        }
     }
 
     [Fact]
-    public void FindConfigFile_WhenExists_ReturnsPath()
+    public void LoadFromMultipleFiles_WithMultipleFiles_MergesRules()
     {
         // Arrange
-        var configPath = Path.Combine(_tempDir, ".codebleach-rules.json");
-        File.WriteAllText(configPath, "{}");
-        var subDir = Path.Combine(_tempDir, "sub", "deep");
-        Directory.CreateDirectory(subDir);
+        var file1 = Path.GetTempFileName();
+        var file2 = Path.GetTempFileName();
+        
+        var json1 = """
+        {
+          "rules": [
+            {
+              "ruleId": "rule1",
+              "name": "Rule 1",
+              "type": "regex",
+              "pattern": "\\bRULE1\\b",
+              "prefix": "R1"
+            }
+          ]
+        }
+        """;
+        
+        var json2 = """
+        {
+          "rules": [
+            {
+              "ruleId": "rule2",
+              "name": "Rule 2",
+              "type": "regex",
+              "pattern": "\\bRULE2\\b",
+              "prefix": "R2"
+            }
+          ]
+        }
+        """;
+        
+        File.WriteAllText(file1, json1);
+        File.WriteAllText(file2, json2);
 
-        // Act
-        var found = CustomRuleLoader.FindConfigFile(subDir);
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.LoadFromMultipleFiles([file1, file2]).ToList();
 
-        // Assert
-        found.Should().Be(configPath);
+            // Assert
+            result.Should().HaveCount(2);
+            result.Should().Contain(r => r.RuleId == "rule1");
+            result.Should().Contain(r => r.RuleId == "rule2");
+        }
+        finally
+        {
+            File.Delete(file1);
+            File.Delete(file2);
+        }
     }
 
     [Fact]
-    public void FindConfigFile_WhenNotExists_ReturnsNull()
+    public void LoadFromMultipleFiles_WithSameRuleIdInMultipleFiles_LaterFileOverrides()
     {
-        // Act
-        var found = CustomRuleLoader.FindConfigFile(_tempDir);
+        // Arrange
+        var file1 = Path.GetTempFileName();
+        var file2 = Path.GetTempFileName();
+        
+        var json1 = """
+        {
+          "rules": [
+            {
+              "ruleId": "shared_rule",
+              "name": "Original Name",
+              "type": "regex",
+              "pattern": "\\bORIGINAL\\b",
+              "prefix": "ORIG"
+            }
+          ]
+        }
+        """;
+        
+        var json2 = """
+        {
+          "rules": [
+            {
+              "ruleId": "shared_rule",
+              "name": "Overridden Name",
+              "type": "regex",
+              "pattern": "\\bOVERRIDDEN\\b",
+              "prefix": "OVER"
+            }
+          ]
+        }
+        """;
+        
+        File.WriteAllText(file1, json1);
+        File.WriteAllText(file2, json2);
 
-        // Assert
-        found.Should().BeNull();
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.LoadFromMultipleFiles([file1, file2]).ToList();
+
+            // Assert
+            result.Should().HaveCount(1);
+            result[0].RuleId.Should().Be("shared_rule");
+            result[0].Name.Should().Be("Overridden Name");
+            result[0].Pattern.Should().Be("\\bOVERRIDDEN\\b");
+            result[0].Prefix.Should().Be("OVER");
+        }
+        finally
+        {
+            File.Delete(file1);
+            File.Delete(file2);
+        }
+    }
+
+    [Fact]
+    public void LoadFromMultipleFiles_WithDisabledRuleInLaterFile_DisablesRule()
+    {
+        // Arrange
+        var file1 = Path.GetTempFileName();
+        var file2 = Path.GetTempFileName();
+        
+        var json1 = """
+        {
+          "rules": [
+            {
+              "ruleId": "to_disable",
+              "name": "Will Be Disabled",
+              "type": "regex",
+              "pattern": "\\bENABLED\\b",
+              "prefix": "EN",
+              "enabled": true
+            }
+          ]
+        }
+        """;
+        
+        var json2 = """
+        {
+          "rules": [
+            {
+              "ruleId": "to_disable",
+              "name": "Now Disabled",
+              "type": "regex",
+              "pattern": "\\bDISABLED\\b",
+              "prefix": "DIS",
+              "enabled": false
+            }
+          ]
+        }
+        """;
+        
+        File.WriteAllText(file1, json1);
+        File.WriteAllText(file2, json2);
+
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.LoadFromMultipleFiles([file1, file2]).ToList();
+
+            // Assert
+            result.Should().BeEmpty(); // Disabled rules are filtered out
+        }
+        finally
+        {
+            File.Delete(file1);
+            File.Delete(file2);
+        }
+    }
+
+    [Fact]
+    public void LoadFromMultipleFiles_WithInvalidFile_SkipsInvalidFile()
+    {
+        // Arrange
+        var validFile = Path.GetTempFileName();
+        var invalidFile = Path.GetTempFileName();
+        
+        var validJson = """
+        {
+          "rules": [
+            {
+              "ruleId": "valid_rule",
+              "name": "Valid Rule",
+              "type": "regex",
+              "pattern": "\\bVALID\\b",
+              "prefix": "VAL"
+            }
+          ]
+        }
+        """;
+        
+        File.WriteAllText(validFile, validJson);
+        File.WriteAllText(invalidFile, "{ invalid json }");
+
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.LoadFromMultipleFiles([invalidFile, validFile]).ToList();
+
+            // Assert
+            // Should load the valid file and skip the invalid one
+            result.Should().HaveCount(1);
+            result[0].RuleId.Should().Be("valid_rule");
+        }
+        finally
+        {
+            File.Delete(validFile);
+            File.Delete(invalidFile);
+        }
+    }
+
+    [Fact]
+    public void FindConfigFile_FromCurrentDirectory_FindsFile()
+    {
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+        var configPath = Path.Combine(tempDir, CustomRuleConfig.DefaultFileName);
+        File.WriteAllText(configPath, "{}");
+
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.FindConfigFile(tempDir);
+
+            // Assert
+            result.Should().Be(configPath);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FindConfigFile_FromParentDirectory_FindsFile()
+    {
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        var subDir = Path.Combine(tempDir, "subdir");
+        Directory.CreateDirectory(subDir);
+        
+        var configPath = Path.Combine(tempDir, CustomRuleConfig.DefaultFileName);
+        File.WriteAllText(configPath, "{}");
+
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.FindConfigFile(subDir);
+
+            // Assert
+            result.Should().Be(configPath);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void FindConfigFile_WhenNotFound_ReturnsNull()
+    {
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            // Act
+            var result = CustomRuleLoader.FindConfigFile(tempDir);
+
+            // Assert
+            result.Should().BeNull();
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 }
-

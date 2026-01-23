@@ -1,0 +1,115 @@
+{
+  "$schema": "https://raw.githubusercontent.com/YOLOVibeCode/codebleach/main/schema/rules.schema.json",
+  "rules": [
+    {
+      "ruleId": "enterprise_server_fqdn",
+      "name": "Enterprise Server FQDN",
+      "description": "Detects fully qualified server names (server.domain.tld)",
+      "type": "regex",
+      "pattern": "\\b[A-Z][A-Z0-9-]+\\.(acme-corp|internal|corp)\\.(com|net)\\b",
+      "prefix": "HOST",
+      "severity": "High",
+      "order": 1
+    },
+    {
+      "ruleId": "sql_linked_server_4part_bracketed",
+      "name": "SQL Linked Server (4-part bracketed)",
+      "description": "Detects [Server].[Database].[Schema].[Table] patterns",
+      "type": "regex",
+      "pattern": "\\[[A-Z][A-Z0-9_]+\\]\\.\\[[A-Z][A-Z0-9_]+\\]\\.\\[[a-z]+\\]\\.\\[[A-Z][A-Z0-9_]+\\]",
+      "prefix": "LINKED",
+      "severity": "High",
+      "order": 2
+    },
+    {
+      "ruleId": "sql_linked_server_4part_unbracketed",
+      "name": "SQL Linked Server (4-part unbracketed)",
+      "description": "Detects Server.Database.Schema.Table patterns",
+      "type": "regex",
+      "pattern": "\\b[A-Z][A-Z0-9_]+\\.[A-Z][A-Z0-9_]+\\.dbo\\.[A-Z][A-Z0-9_]+\\b",
+      "prefix": "LINKED",
+      "severity": "High",
+      "order": 3
+    },
+    {
+      "ruleId": "enterprise_server_name",
+      "name": "Enterprise Server Name",
+      "description": "Detects server names like PRODSRV01, STGSRV01",
+      "type": "regex",
+      "pattern": "\\b(PROD|STG|DEV|SQL|DB|FILE|LINKED)S(RV|VR|ERVER)[0-9-]+\\b",
+      "prefix": "SERVER",
+      "severity": "High",
+      "order": 4
+    },
+    {
+      "ruleId": "enterprise_db_prefix",
+      "name": "Enterprise Database Prefix",
+      "description": "Detects database names starting with DB (e.g., DBZMEW, DB2MEW)",
+      "type": "regex",
+      "pattern": "\\bDB[A-Z0-9]+\\b",
+      "prefix": "DB",
+      "severity": "High",
+      "order": 5
+    },
+    {
+      "ruleId": "enterprise_named_db",
+      "name": "Enterprise Named Database",
+      "description": "Detects named databases like HRDatabase, FinanceDB",
+      "type": "regex",
+      "pattern": "\\b(HR|Finance|Sales|User|Order|Inventory)Database\\b",
+      "prefix": "DB",
+      "severity": "High",
+      "order": 6
+    },
+    {
+      "ruleId": "ad_service_account",
+      "name": "AD Service Account",
+      "description": "Detects Active Directory service accounts",
+      "type": "regex",
+      "pattern": "\\b[A-Z]+\\\\svc_[a-z0-9_]+\\b",
+      "prefix": "ADUSER",
+      "severity": "High",
+      "order": 7
+    },
+    {
+      "ruleId": "vault_path",
+      "name": "HashiCorp Vault Path",
+      "description": "Detects Vault secret paths",
+      "type": "regex",
+      "pattern": "secret/data/[a-z0-9/-]+",
+      "prefix": "VAULT",
+      "severity": "Critical",
+      "order": 8
+    },
+    {
+      "ruleId": "sql_schema_dbo_qualified",
+      "name": "SQL Schema.dbo.Table",
+      "description": "Detects DATABASE.dbo.TABLE patterns",
+      "type": "regex",
+      "pattern": "\\b[A-Z][A-Z0-9_]+\\.dbo\\.[A-Z][A-Z0-9_]+\\b",
+      "prefix": "SCHEMA",
+      "severity": "High",
+      "order": 10
+    },
+    {
+      "ruleId": "sql_schema_qualified",
+      "name": "SQL Schema.Table",
+      "description": "Detects DATABASE.TABLE patterns (2-part)",
+      "type": "regex",
+      "pattern": "\\b[A-Z][A-Z0-9_]+\\.[A-Z][A-Z0-9_]+\\b",
+      "prefix": "SCHEMA",
+      "severity": "High",
+      "order": 11
+    },
+    {
+      "ruleId": "sql_table_prefixed",
+      "name": "SQL Prefixed Tables",
+      "description": "Detects table names like TB00123, TA09052",
+      "type": "regex",
+      "pattern": "\\b[A-Z]{2}\\d{5,6}\\b",
+      "prefix": "TBL",
+      "severity": "Medium",
+      "order": 12
+    }
+  ]
+}

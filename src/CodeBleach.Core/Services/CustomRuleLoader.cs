@@ -38,7 +38,8 @@ public static class CustomRuleLoader
             var configDir = Path.GetDirectoryName(configPath) ?? ".";
             var rules = new List<SanitizationRule>();
             
-            foreach (var r in config.Rules.Where(r => r.Enabled))
+            // Load ALL rules (don't filter by Enabled here - let caller decide)
+            foreach (var r in config.Rules)
             {
                 var pattern = ResolvePattern(r, configDir);
                 if (string.IsNullOrEmpty(pattern))
@@ -60,7 +61,8 @@ public static class CustomRuleLoader
                 });
             }
             
-            return rules;
+            // Filter to only enabled rules before returning
+            return rules.Where(r => r.Enabled);
         }
         catch
         {
@@ -226,6 +228,91 @@ public static class CustomRuleLoader
             }
             
             return [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+    
+    /// <summary>
+    /// Loads and merges rules from multiple configuration files.
+    /// Later files override earlier files if they have the same ruleId.
+    /// Disabled rules are filtered out from the final result.
+    /// </summary>
+    /// <param name="configPaths">List of configuration file paths to load, in priority order</param>
+    /// <returns>Merged set of enabled rules</returns>
+    public static IEnumerable<SanitizationRule> LoadFromMultipleFiles(IEnumerable<string> configPaths)
+    {
+        var rulesById = new Dictionary<string, SanitizationRule>(StringComparer.OrdinalIgnoreCase);
+        
+        foreach (var configPath in configPaths)
+        {
+            // Load ALL rules (including disabled ones) for proper override handling
+            var allRulesFromFile = LoadAllRulesFromFile(configPath);
+            
+            foreach (var rule in allRulesFromFile)
+            {
+                // Later files override earlier files (by ruleId)
+                rulesById[rule.RuleId] = rule;
+            }
+        }
+        
+        // Filter to only enabled rules at the end
+        return rulesById.Values.Where(r => r.Enabled);
+    }
+    
+    /// <summary>
+    /// Internal helper that loads ALL rules from a file, including disabled ones.
+    /// </summary>
+    private static IEnumerable<SanitizationRule> LoadAllRulesFromFile(string configPath)
+    {
+        if (!File.Exists(configPath))
+        {
+            return [];
+        }
+        
+        try
+        {
+            var json = File.ReadAllText(configPath);
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            var config = JsonSerializer.Deserialize<CustomRuleConfig>(json, options);
+            
+            if (config?.Rules == null)
+            {
+                return [];
+            }
+            
+            var configDir = Path.GetDirectoryName(configPath) ?? ".";
+            var rules = new List<SanitizationRule>();
+            
+            // Load ALL rules (don't filter by Enabled)
+            foreach (var r in config.Rules)
+            {
+                var pattern = ResolvePattern(r, configDir);
+                if (string.IsNullOrEmpty(pattern))
+                {
+                    continue;
+                }
+                
+                rules.Add(new SanitizationRule
+                {
+                    RuleId = r.RuleId,
+                    Name = r.Name,
+                    Description = r.Description ?? $"Custom rule: {r.Name}",
+                    Pattern = pattern,
+                    Prefix = r.Prefix,
+                    Severity = r.Severity,
+                    Enabled = r.Enabled,
+                    Exceptions = r.Exceptions,
+                    Order = r.Order
+                });
+            }
+            
+            return rules;
         }
         catch
         {

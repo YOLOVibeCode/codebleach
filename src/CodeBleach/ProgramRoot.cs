@@ -14,7 +14,9 @@ public static class ProgramRoot
         {
             SanitizeCommand.Create(),
             RestoreCommand.Create(),
-            StatusCommand.Create()
+            StatusCommand.Create(),
+            InitCommand.Create(),
+            ConfigCommand.Create()
         };
         
         return await rootCommand.InvokeAsync(args);

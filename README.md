@@ -90,6 +90,7 @@ codebleach sanitize ./training-materials
 
 - **🔍 Pattern-Based Detection** - 11 built-in rules for common sensitive data
 - **🎨 Custom Rules** - Add project-specific patterns via JSON (no recompilation)
+- **🌍 Global Configuration** - Define rules once, apply to all projects automatically
 - **🔄 Perfect Round-Trip** - Sanitize → AI Edit → Restore with zero data loss
 - **📋 Complete Audit Trail** - Manifest and cross-reference files track all changes
 - **👀 Dry-Run Mode** - Preview changes before committing
@@ -120,6 +121,18 @@ codebleach sanitize ~/projects/my-app
 # 3. Restore original values
 cd ~/projects/my-app-sanitize
 codebleach restore
+```
+
+### Optional: Set Up Global Configuration
+
+For SQL or database-heavy projects, set up global rules once:
+
+```bash
+# Create global config with SQL-focused rules
+codebleach init --global --sql
+
+# Now all projects automatically use these rules
+codebleach sanitize ~/any-project
 ```
 
 ### Preview Changes (Dry Run)
@@ -311,6 +324,151 @@ codebleach status
 # Check specific directory
 codebleach status --directory ./my-project-sanitize
 ```
+
+### `init` - Initialize Configuration
+
+Create a CodeBleach configuration file with example rules.
+
+```bash
+codebleach init [options]
+```
+
+**Options:**
+- `--global, -g` - Create global user configuration (applies to all projects)
+- `--sql` - Include SQL-focused rules (databases, schemas, tables)
+- `--force, -f` - Overwrite existing configuration file
+
+**Examples:**
+```bash
+# Create project-local config
+codebleach init
+
+# Create global config (applies to all projects)
+codebleach init --global
+
+# Create global config with SQL rules
+codebleach init --global --sql
+```
+
+### `config` - Manage Configuration
+
+View configuration file locations and hierarchy.
+
+```bash
+codebleach config [options]
+```
+
+**Options:**
+- `--list, -l` - List all configuration file locations
+- `--path, -p` - Show global configuration directory path
+
+**Examples:**
+```bash
+# Show global config path
+codebleach config --path
+
+# List all config files in priority order
+codebleach config --list
+```
+
+## ⚙️ Global Configuration
+
+CodeBleach supports a **multi-level configuration system** that lets you define rules once and apply them to all projects.
+
+### Configuration Hierarchy (Priority Low → High)
+
+```
+1. Built-in Rules       → Always loaded (11 patterns)
+2. Global User Config   → ~/.config/codebleach/rules.json (Linux/macOS)
+                          %APPDATA%\codebleach\rules.json (Windows)
+3. CLI --rules Option   → Explicit override: --rules ~/my-rules.json
+4. Project-Local Config → .codebleach-rules.json in project or parent dirs
+```
+
+**Later sources override earlier sources** for rules with the same `ruleId`.
+
+### Quick Setup for SQL Projects
+
+If you work with SQL databases and want to sanitize database names, schemas, and table references across ALL projects:
+
+```bash
+# One-time setup: Create global config with SQL rules
+codebleach init --global --sql
+
+# Now ALL sanitize operations will use these rules
+codebleach sanitize ~/projects/my-app-1    # Uses SQL rules
+codebleach sanitize ~/projects/my-app-2    # Uses SQL rules
+codebleach sanitize ~/other/project        # Uses SQL rules
+```
+
+The global configuration is stored at:
+- **Linux/macOS:** `~/.config/codebleach/rules.json`
+- **Windows:** `%APPDATA%\codebleach\rules.json`
+- **Custom:** Set `CODEBLEACH_CONFIG_DIR` environment variable
+
+### Viewing Active Configuration
+
+```bash
+# See which config files are being loaded
+codebleach config --list
+
+# Output:
+# Configuration Files
+# ===================
+# 
+# Files are loaded in priority order (lowest to highest):
+# 
+#   1. /Users/you/.config/codebleach/rules.json
+#      (global user config)
+# 
+#   2. /Users/you/projects/my-app/.codebleach-rules.json
+#      (project-local config)
+# 
+# Note: Later files override earlier files for rules with the same ruleId.
+```
+
+### Per-Project Customization
+
+You can still create project-specific rules that override or extend your global config:
+
+```bash
+# Create project-local config
+cd ~/projects/special-app
+codebleach init
+
+# Edit .codebleach-rules.json to add project-specific rules
+# These will merge with (and override) your global rules
+```
+
+### One-Off Rule Files
+
+For temporary or experimental rules, use the `--rules` option:
+
+```bash
+# Use specific rules file for this run only
+codebleach sanitize ./my-project --rules ~/experimental-rules.json
+```
+
+### Disabling Global Rules for a Project
+
+To disable a specific global rule in a project, create `.codebleach-rules.json` with:
+
+```json
+{
+  "rules": [
+    {
+      "ruleId": "sql_database_names",
+      "name": "SQL Database Names",
+      "type": "regex",
+      "pattern": "dummy",
+      "prefix": "DISABLED",
+      "enabled": false
+    }
+  ]
+}
+```
+
+The `enabled: false` flag will override and disable the global rule.
 
 ## 🔍 What Gets Sanitized
 
