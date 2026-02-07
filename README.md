@@ -1,6 +1,6 @@
 # CodeBleach
 
-**Dead simple sanitization utility for sharing code with AI assistants**
+**Industrial-grade multi-language code obfuscator for sharing code with AI assistants**
 
 <!-- AUTO-INDEX-SECTION -->
 <!--
@@ -42,7 +42,12 @@ Browse the complete **[Documentation Index](documents/INDEX.md)** for all projec
 <!-- AUTO-INDEX-SECTION -->
 
 
-CodeBleach is a .NET global tool that sanitizes sensitive data from your codebase before sharing it with AI assistants like ChatGPT, Claude, or GitHub Copilot. It creates a sanitized copy of your project, replacing sensitive values (database names, IPs, API keys, etc.) with safe aliases, and can restore original values when AI-modified code is returned.
+CodeBleach is a .NET global tool that obfuscates your code before sharing it with AI assistants like ChatGPT, Claude, or GitHub Copilot. It supports two levels of protection:
+
+- **Level 1 (Sanitize)** - Regex-based pattern matching replaces sensitive values (database names, IPs, API keys) with safe aliases
+- **Level 2 (Full Obfuscation)** - Language-aware AST/token parsing renames **all** identifiers, removes comments, obfuscates strings, and renames files so a compromised LLM context reveals no organizational fingerprint
+
+Both levels create a sanitized copy of your project and can restore original values when AI-modified code is returned.
 
 ## 🎯 Use Cases
 
@@ -53,8 +58,11 @@ CodeBleach is a .NET global tool that sanitizes sensitive data from your codebas
 **Solution:** Sanitize first, share safely, restore after.
 
 ```bash
-# Sanitize your project
+# Level 1: Replace sensitive patterns (default)
 codebleach sanitize ~/projects/my-app
+
+# Level 2: Full obfuscation - rename ALL identifiers
+codebleach sanitize ~/projects/my-app --level 2
 
 # Share the sanitized copy with AI
 # ... get AI suggestions ...
@@ -64,7 +72,23 @@ cd ~/projects/my-app-sanitize
 codebleach restore
 ```
 
-### Use Case 2: Code Reviews and Documentation
+### Use Case 2: Zero-Fingerprint LLM Context
+
+**Problem:** Your LLM context could be compromised, and you need to ensure no organizational identifiers are exposed.
+
+**Solution:** Level 2 obfuscation renames everything - classes, methods, variables, file names, comments - leaving only structural code.
+
+```bash
+codebleach sanitize ./my-project --level 2
+
+# Before: public class InvoiceService { decimal CalculateTotal() ... }
+# After:  public class CLS_0 { decimal MTD_0() ... }
+
+# Before: src/Services/InvoiceService.cs
+# After:  DIR_0/DIR_1/CLS_0.cs
+```
+
+### Use Case 3: Code Reviews and Documentation
 
 **Problem:** You need to create documentation or examples but don't want to expose internal infrastructure details.
 
@@ -75,23 +99,18 @@ codebleach sanitize ./examples --output ./examples-public
 # Now examples-public/ is safe to commit to public repos
 ```
 
-### Use Case 3: Onboarding and Training
-
-**Problem:** New team members need example code, but you can't share production configurations.
-
-**Solution:** Provide sanitized training materials.
-
-```bash
-codebleach sanitize ./training-materials
-# Share sanitized version with new hires
-```
-
 ## ✨ Key Features
 
-- **🔍 Pattern-Based Detection** - 11 built-in rules for common sensitive data
+- **🧠 9 Language Processors** - AST-aware obfuscation for C#, VB.NET, T-SQL, JavaScript, COBOL, JCL, VBScript/VBA, Oracle SQL/PL-SQL, and F#
+- **🔍 Pattern-Based Detection** - 11 built-in rules for common sensitive data (Level 1)
+- **🎯 Full Identifier Obfuscation** - Renames all classes, methods, variables, tables, columns using semantic prefixes (Level 2)
+- **📁 File Name Obfuscation** - Renames files and directories to prevent organizational fingerprinting (Level 2)
+- **🔗 Cross-File Reference Patching** - Updates imports, project references, and solution files after renames
+- **🌐 Cross-Language Delegation** - COBOL EXEC SQL and JCL instream SQL are delegated to the SQL processor
 - **🎨 Custom Rules** - Add project-specific patterns via JSON (no recompilation)
 - **🌍 Global Configuration** - Define rules once, apply to all projects automatically
-- **🔄 Perfect Round-Trip** - Sanitize → AI Edit → Restore with zero data loss
+- **🔄 Perfect Round-Trip** - Sanitize/Obfuscate -> AI Edit -> Restore with zero data loss
+- **✅ Build Verification** - `--verify` flag runs your project's build after obfuscation to catch breakage
 - **📋 Complete Audit Trail** - Manifest and cross-reference files track all changes
 - **👀 Dry-Run Mode** - Preview changes before committing
 - **⚡ Fast** - Processes 1000+ files in seconds
@@ -112,27 +131,18 @@ codebleach --version
 ### Basic Usage
 
 ```bash
-# 1. Sanitize a directory (creates <directory>-sanitize)
+# Level 1: Sanitize sensitive patterns (default)
 codebleach sanitize ~/projects/my-app
 
-# 2. Share sanitized copy with AI
-# ... work with AI on ~/projects/my-app-sanitize ...
+# Level 2: Full AST-aware obfuscation
+codebleach sanitize ~/projects/my-app --level 2
 
-# 3. Restore original values
+# Level 2 with build verification
+codebleach sanitize ~/projects/my-app --level 2 --verify
+
+# Restore original values
 cd ~/projects/my-app-sanitize
 codebleach restore
-```
-
-### Optional: Set Up Global Configuration
-
-For SQL or database-heavy projects, set up global rules once:
-
-```bash
-# Create global config with SQL-focused rules
-codebleach init --global --sql
-
-# Now all projects automatically use these rules
-codebleach sanitize ~/any-project
 ```
 
 ### Preview Changes (Dry Run)
@@ -172,7 +182,7 @@ dotnet tool uninstall -g CodeBleach
 
 ## 📖 Examples
 
-### Example 1: Sanitize a .NET Project
+### Example 1: Level 1 - Sanitize a .NET Project
 
 ```bash
 # Your project contains:
@@ -203,7 +213,53 @@ var redisHost = "IP_0";
 var apiUrl = "https://HOST_0/v1/TABLE_1";
 ```
 
-### Example 2: Custom Rules
+### Example 2: Level 2 - Full Obfuscation
+
+```bash
+codebleach sanitize ./MyProject --level 2
+```
+
+**Before:**
+```csharp
+namespace Acme.Billing
+{
+    // Calculate invoice totals with tax
+    public class InvoiceService
+    {
+        private decimal _taxRate = 0.08m;
+
+        public decimal CalculateTotal(decimal subtotal)
+        {
+            return subtotal + (subtotal * _taxRate);
+        }
+    }
+}
+```
+
+**After:**
+```csharp
+namespace NS_0.NS_1
+{
+    // [Comment removed]
+    public class CLS_0
+    {
+        private decimal FLD_0 = 0.08m;
+
+        public decimal MTD_0(decimal PRM_0)
+        {
+            return PRM_0 + (PRM_0 * FLD_0);
+        }
+    }
+}
+```
+
+File structure also renamed:
+```
+Before: src/Services/InvoiceService.cs
+After:  DIR_0/DIR_1/CLS_0.cs
+```
+
+### Example 3: Custom Rules
 
 Create `.codebleach-rules.json` in your project root:
 
@@ -235,16 +291,16 @@ codebleach sanitize ./my-project
 # Custom rules loaded automatically!
 ```
 
-### Example 3: Restore After AI Edits
+### Example 4: Restore After AI Edits
 
 ```bash
 # 1. Sanitize
-codebleach sanitize ~/projects/my-app
+codebleach sanitize ~/projects/my-app --level 2
 
 # 2. Share with AI, get suggestions
-# AI modifies ~/projects/my-app-sanitize/src/Program.cs
+# AI modifies ~/projects/my-app-sanitize/src/CLS_0.cs
 
-# 3. Restore original values
+# 3. Restore original values (including file names)
 cd ~/projects/my-app-sanitize
 codebleach restore
 
@@ -252,7 +308,7 @@ codebleach restore
 cp -r src/* ~/projects/my-app/src/
 ```
 
-### Example 4: Write-Back to Original Location
+### Example 5: Write-Back to Original Location
 
 ```bash
 # Restore and write directly back to original source
@@ -272,20 +328,29 @@ codebleach sanitize <source-directory> [options]
 
 **Options:**
 - `--output, -o <path>` - Custom output directory (default: `<source>-sanitize`)
+- `--level, -l <1|2>` - Obfuscation level: 1=sanitize patterns (default), 2=full identifier obfuscation
+- `--verify` - Build the output after obfuscation to verify correctness
 - `--dry-run, -n` - Preview changes without modifying files
 - `--verbose, -v` - Show detailed output with diffs
 - `--force, -f` - Overwrite existing output directory
+- `--rules, -r <path>` - Path to custom rules file (overrides auto-discovery)
 
 **Examples:**
 ```bash
-# Basic sanitization
+# Basic sanitization (Level 1)
 codebleach sanitize ./my-project
+
+# Full obfuscation (Level 2)
+codebleach sanitize ./my-project --level 2
+
+# Full obfuscation with build verification
+codebleach sanitize ./my-project --level 2 --verify
 
 # Custom output location
 codebleach sanitize ./my-project --output ./clean-version
 
 # Preview changes
-codebleach sanitize ./my-project --dry-run --verbose
+codebleach sanitize ./my-project --level 2 --dry-run --verbose
 ```
 
 ### `restore` - Restore Sanitized Directory
@@ -296,6 +361,7 @@ codebleach restore [options]
 
 **Options:**
 - `--writeback, -w` - Write restored files back to original location
+- `--verify` - Build the output after restore to verify correctness
 - `--yes, -y` - Skip confirmation prompts
 - `--dry-run, -n` - Preview what would be restored
 - `--verbose, -v` - Show detailed output
@@ -308,6 +374,28 @@ codebleach restore
 
 # Write back to original location
 codebleach restore --writeback
+
+# Restore with build verification
+codebleach restore --verify
+```
+
+### `verify` - Verify Build
+
+Detect the project's build system and run a build to verify the code compiles.
+
+```bash
+codebleach verify [directory] [--verbose]
+```
+
+Supported build systems: .NET (sln/csproj), TypeScript (tsconfig.json), JavaScript (package.json), Make.
+
+**Examples:**
+```bash
+# Verify current directory builds
+codebleach verify
+
+# Verify specific directory
+codebleach verify ./my-project-sanitize --verbose
 ```
 
 ### `status` - Show Sanitization Status
@@ -371,18 +459,55 @@ codebleach config --path
 codebleach config --list
 ```
 
+## 🧠 Supported Languages (Level 2)
+
+Level 2 obfuscation uses language-specific parsers for accurate, structure-preserving identifier renaming:
+
+| Language | Parser | Capabilities |
+|----------|--------|-------------|
+| **C#** | Roslyn | Classes, interfaces, methods, properties, fields, variables, parameters, enums, namespaces, string literals, comments |
+| **VB.NET** | Roslyn | Classes, modules, subs, functions, properties, variables, parameters, comments |
+| **T-SQL / DB2** | ScriptDom | Tables, columns, procedures, functions, CTEs, cursors, variables, temp tables, comments, string literals |
+| **JavaScript** | Acornima | Classes, functions, variables, parameters, destructuring, imports/exports, comments, string literals |
+| **COBOL** | Custom tokenizer | PROGRAM-ID, paragraph names, data items, WORKING-STORAGE, PROCEDURE DIVISION, EXEC SQL delegation |
+| **JCL** | Custom parser | Job names, step names, DD names, program names, dataset names, symbolic parameters, instream SQL delegation |
+| **VBScript/VBA** | Custom tokenizer | Subs, functions, classes, properties, variables, constants, Dim/ReDim, dialect-specific built-in preservation |
+| **Oracle SQL/PL-SQL** | Custom tokenizer | Tables (CREATE), columns, packages, procedures, DECLARE block variables, materialized views, bind variables, optimizer hints |
+| **F#** | FSharp.Compiler.Service | Modules, let bindings, functions, types, union cases, record fields, parameters, comments |
+
+### Semantic Alias Prefixes
+
+Level 2 uses ~58 semantic categories for readable obfuscated code:
+
+| Prefix | Meaning | Example |
+|--------|---------|---------|
+| `CLS_` | Class | `CLS_0`, `CLS_1` |
+| `MTD_` | Method | `MTD_0` |
+| `PROP_` | Property | `PROP_0` |
+| `FLD_` | Field | `FLD_0` |
+| `VAR_` | Variable | `VAR_0` |
+| `PRM_` | Parameter | `PRM_0` |
+| `NS_` | Namespace | `NS_0` |
+| `TBL_` | Table | `TBL_0` |
+| `COL_` | Column | `COL_0` |
+| `SP_` | Stored Procedure | `SP_0` |
+| `FILE_` | File name | `FILE_0.js` |
+| `DIR_` | Directory | `DIR_0/` |
+| `PROJ_` | Project file | `PROJ_0.csproj` |
+| ... | ~45 more | See `SemanticCategory.cs` |
+
 ## ⚙️ Global Configuration
 
 CodeBleach supports a **multi-level configuration system** that lets you define rules once and apply them to all projects.
 
-### Configuration Hierarchy (Priority Low → High)
+### Configuration Hierarchy (Priority Low -> High)
 
 ```
-1. Built-in Rules       → Always loaded (11 patterns)
-2. Global User Config   → ~/.config/codebleach/rules.json (Linux/macOS)
+1. Built-in Rules       -> Always loaded (11 patterns)
+2. Global User Config   -> ~/.config/codebleach/rules.json (Linux/macOS)
                           %APPDATA%\codebleach\rules.json (Windows)
-3. CLI --rules Option   → Explicit override: --rules ~/my-rules.json
-4. Project-Local Config → .codebleach-rules.json in project or parent dirs
+3. CLI --rules Option   -> Explicit override: --rules ~/my-rules.json
+4. Project-Local Config -> .codebleach-rules.json in project or parent dirs
 ```
 
 **Later sources override earlier sources** for rules with the same `ruleId`.
@@ -411,20 +536,6 @@ The global configuration is stored at:
 ```bash
 # See which config files are being loaded
 codebleach config --list
-
-# Output:
-# Configuration Files
-# ===================
-# 
-# Files are loaded in priority order (lowest to highest):
-# 
-#   1. /Users/you/.config/codebleach/rules.json
-#      (global user config)
-# 
-#   2. /Users/you/projects/my-app/.codebleach-rules.json
-#      (project-local config)
-# 
-# Note: Later files override earlier files for rules with the same ruleId.
 ```
 
 ### Per-Project Customization
@@ -472,7 +583,7 @@ The `enabled: false` flag will override and disable the global rule.
 
 ## 🔍 What Gets Sanitized
 
-### Built-in Rules (11 patterns)
+### Level 1: Built-in Rules (11 patterns)
 
 | Pattern | Example | Alias |
 |---------|---------|-------|
@@ -487,6 +598,17 @@ The `enabled: false` flag will override and disable the global rule.
 | **Production Tables** | `users_prod`, `orders_prod` | `TABLE_0` |
 | **User Tables** | `users`, `accounts`, `customers` | `TABLE_1` |
 | **Production Databases** | `MyAppProd`, `app-production` | `SERVER_2` |
+
+### Level 2: Full Identifier Obfuscation
+
+In addition to Level 1 rules, Level 2 uses AST-aware parsers to:
+
+- **Rename all user-defined identifiers** (classes, methods, variables, tables, columns, etc.)
+- **Remove all comments** (replaced with `[Comment removed]`)
+- **Obfuscate string literals** (replaced with `STR_N` aliases)
+- **Rename files and directories** (using semantic prefixes like `CLS_0.cs`, `DIR_0/`)
+- **Patch cross-file references** (imports, project references, solution files)
+- **Preserve language keywords and framework types** (e.g., `public`, `Console`, `SELECT`)
 
 ### Custom Rules
 
@@ -510,17 +632,17 @@ See [CUSTOM_RULES.md](CUSTOM_RULES.md) for detailed documentation.
 
 ## 📁 Project Structure
 
-After sanitization, your project structure looks like:
+After Level 2 sanitization, your project structure looks like:
 
 ```
 my-app-sanitize/
 ├── .codebleach/
-│   ├── manifest.json      # Machine-readable mappings
+│   ├── manifest.json      # Machine-readable mappings (identifier + file path)
 │   └── xref.md            # Human-readable cross-reference
-├── src/
-│   ├── Program.cs         # Sanitized (ProductionDB → SERVER_0)
-│   └── appsettings.json   # Sanitized (192.168.1.100 → IP_0)
-└── ...
+├── DIR_0/
+│   ├── CLS_0.cs           # Sanitized (InvoiceService.cs → CLS_0.cs)
+│   └── FILE_0.json        # Sanitized (appsettings.json → FILE_0.json)
+└── PROJ_0.csproj           # Sanitized (MyApp.csproj → PROJ_0.csproj)
 ```
 
 ## 🔄 Workflow Example
@@ -529,31 +651,31 @@ my-app-sanitize/
 # 1. Start with your project
 ~/projects/my-app/
   ├── src/
-  │   ├── Program.cs       # Contains: ProductionDB, 192.168.1.100
-  │   └── appsettings.json # Contains: Server=ProductionDB
+  │   ├── InvoiceService.cs   # Contains: class InvoiceService, CalculateTotal()
+  │   └── appsettings.json    # Contains: Server=ProductionDB
 
-# 2. Sanitize
-codebleach sanitize ~/projects/my-app
+# 2. Sanitize (Level 2)
+codebleach sanitize ~/projects/my-app --level 2
 
-# 3. Result: Sanitized copy created
+# 3. Result: Fully obfuscated copy
 ~/projects/my-app-sanitize/
   ├── .codebleach/
-  │   ├── manifest.json    # Tracks: ProductionDB ↔ SERVER_0
-  │   └── xref.md          # Shows all substitutions
-  ├── src/
-  │   ├── Program.cs       # Now: SERVER_0, IP_0
-  │   └── appsettings.json # Now: Server=SERVER_0
+  │   ├── manifest.json      # Tracks: InvoiceService ↔ CLS_0, CalculateTotal ↔ MTD_0
+  │   └── xref.md
+  ├── DIR_0/
+  │   ├── CLS_0.cs           # class CLS_0 { MTD_0() ... }
+  │   └── FILE_0.json        # Server=SERVER_0
 
-# 4. Share with AI, get suggestions
-# AI modifies ~/projects/my-app-sanitize/src/Program.cs
+# 4. Share with AI - zero organizational fingerprint
+# AI modifies ~/projects/my-app-sanitize/DIR_0/CLS_0.cs
 
-# 5. Restore original values
+# 5. Restore original values + file names
 cd ~/projects/my-app-sanitize
 codebleach restore
 
-# 6. Result: Original values restored
-src/Program.cs       # Now: ProductionDB, 192.168.1.100 (restored)
-src/appsettings.json # Now: Server=ProductionDB (restored)
+# 6. Result: Everything restored
+src/InvoiceService.cs   # class InvoiceService { CalculateTotal() ... }
+src/appsettings.json    # Server=ProductionDB
 ```
 
 ## 🛠️ Advanced Usage
@@ -584,15 +706,36 @@ codebleach restore --writeback
 # Files written back to original location
 ```
 
+### Build Verification
+
+```bash
+# Verify obfuscated code still compiles
+codebleach sanitize ./my-project --level 2 --verify
+
+# Verify after restore
+codebleach restore --verify
+
+# Standalone verification
+codebleach verify ./my-project-sanitize
+```
+
 ## 📋 File Types Supported
 
-CodeBleach processes these file types:
+**Language-aware processing (Level 2):**
+- **C#**: `.cs`, `.csx`
+- **VB.NET**: `.vb`
+- **T-SQL / DB2**: `.sql`
+- **JavaScript**: `.js`, `.mjs`, `.cjs`
+- **COBOL**: `.cbl`, `.cob`, `.cpy`
+- **JCL**: `.jcl`, `.prc`
+- **VBScript/VBA**: `.vbs`, `.bas`, `.cls`, `.frm`
+- **Oracle SQL/PL-SQL**: `.pls`, `.plb`, `.pks`, `.pkb`, `.fnc`, `.prc`, `.trg`
+- **F#**: `.fs`, `.fsi`, `.fsx`
 
-- **Code**: `.cs`, `.js`, `.ts`, `.py`, `.go`, `.java`, `.rb`, `.php`, etc.
+**Regex-based processing (Level 1, all file types):**
 - **Config**: `.json`, `.yaml`, `.xml`, `.config`, `.ini`, `.env`
 - **Scripts**: `.sh`, `.ps1`, `.bat`, `.cmd`
 - **Web**: `.html`, `.css`, `.scss`
-- **Data**: `.sql`, `.graphql`
 - **Docs**: `.md`, `.txt`, `.rst`
 
 **Automatically skips:**
@@ -659,4 +802,3 @@ Inspired by the need to safely share code with AI assistants while protecting se
 ---
 
 **Made with ❤️ for developers who want to use AI safely**
-
