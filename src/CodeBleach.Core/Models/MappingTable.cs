@@ -13,6 +13,12 @@ public sealed class MappingTable
     
     /// <summary>Counter per prefix for alias generation</summary>
     public Dictionary<string, int> Counters { get; init; } = new();
+
+    /// <summary>Original relative file path → obfuscated relative file path (e.g., "src/Services/PayrollService.cs" → "src/DIR_0/FILE_0.cs")</summary>
+    public Dictionary<string, string> FilePathForward { get; init; } = new();
+
+    /// <summary>Obfuscated relative file path → original relative file path</summary>
+    public Dictionary<string, string> FilePathReverse { get; init; } = new();
     
     /// <summary>Gets or creates an alias for the given value.</summary>
     public string GetOrCreateAlias(string originalValue, string prefix)

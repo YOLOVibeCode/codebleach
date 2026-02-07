@@ -10,11 +10,25 @@ public sealed class FileProcessor : IFileProcessor
 {
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".cs", ".fs", ".vb", ".js", ".ts", ".jsx", ".tsx", ".py", ".go", ".rs", ".java", ".kt", ".swift", ".rb", ".php",
+        // .NET languages
+        ".cs", ".csx", ".fs", ".fsx", ".fsi", ".vb",
+        // JavaScript / TypeScript
+        ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
+        // VBScript / VBA
+        ".vbs", ".bas", ".cls", ".frm",
+        // Other languages
+        ".py", ".go", ".rs", ".java", ".kt", ".swift", ".rb", ".php",
+        // Data / Config
         ".json", ".yaml", ".yml", ".xml", ".config", ".ini", ".toml", ".env",
+        // Shell
         ".sh", ".bash", ".ps1", ".psm1", ".bat", ".cmd",
+        // Web
         ".html", ".htm", ".css", ".scss", ".less",
-        ".sql", ".graphql",
+        // SQL (T-SQL, DB2, Oracle, generic)
+        ".sql", ".db2", ".pls", ".plb", ".pks", ".pkb", ".fnc", ".prc", ".trg", ".graphql",
+        // Mainframe
+        ".cbl", ".cob", ".cpy", ".jcl",
+        // Docs
         ".md", ".txt", ".rst"
     };
     

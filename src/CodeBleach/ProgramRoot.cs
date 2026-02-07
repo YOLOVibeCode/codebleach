@@ -14,6 +14,7 @@ public static class ProgramRoot
         {
             SanitizeCommand.Create(),
             RestoreCommand.Create(),
+            VerifyCommand.Create(),
             StatusCommand.Create(),
             InitCommand.Create(),
             ConfigCommand.Create()

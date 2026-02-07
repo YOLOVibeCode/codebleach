@@ -2,9 +2,27 @@
   <Folder Name="/src/">
     <Project Path="src/CodeBleach.Core/CodeBleach.Core.csproj" />
     <Project Path="src/CodeBleach/CodeBleach.csproj" />
+    <Project Path="src/CodeBleach.Processors.Sql/CodeBleach.Processors.Sql.csproj" />
+    <Project Path="src/CodeBleach.Processors.CSharp/CodeBleach.Processors.CSharp.csproj" />
+    <Project Path="src/CodeBleach.Processors.VisualBasic/CodeBleach.Processors.VisualBasic.csproj" />
+    <Project Path="src/CodeBleach.Processors.JavaScript/CodeBleach.Processors.JavaScript.csproj" />
+    <Project Path="src/CodeBleach.Processors.Cobol/CodeBleach.Processors.Cobol.csproj" />
+    <Project Path="src/CodeBleach.Processors.Jcl/CodeBleach.Processors.Jcl.csproj" />
+    <Project Path="src/CodeBleach.Processors.VbScript/CodeBleach.Processors.VbScript.csproj" />
+    <Project Path="src/CodeBleach.Processors.OracleSql/CodeBleach.Processors.OracleSql.csproj" />
+    <Project Path="src/CodeBleach.Processors.FSharp/CodeBleach.Processors.FSharp.fsproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CodeBleach.IntegrationTests/CodeBleach.IntegrationTests.csproj" />
     <Project Path="tests/CodeBleach.Tests/CodeBleach.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.Cobol.Tests/CodeBleach.Processors.Cobol.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.CSharp.Tests/CodeBleach.Processors.CSharp.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.VisualBasic.Tests/CodeBleach.Processors.VisualBasic.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.Sql.Tests/CodeBleach.Processors.Sql.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.JavaScript.Tests/CodeBleach.Processors.JavaScript.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.Jcl.Tests/CodeBleach.Processors.Jcl.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.VbScript.Tests/CodeBleach.Processors.VbScript.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.OracleSql.Tests/CodeBleach.Processors.OracleSql.Tests.csproj" />
+    <Project Path="tests/CodeBleach.Processors.FSharp.Tests/CodeBleach.Processors.FSharp.Tests.csproj" />
   </Folder>
 </Solution>
