@@ -18,5 +18,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\CodeBleach\CodeBleach.csproj" />
     <ProjectReference Include="..\..\src\CodeBleach.Core\CodeBleach.Core.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.CSharp\CodeBleach.Processors.CSharp.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.VisualBasic\CodeBleach.Processors.VisualBasic.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.Sql\CodeBleach.Processors.Sql.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.JavaScript\CodeBleach.Processors.JavaScript.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.Jcl\CodeBleach.Processors.Jcl.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.VbScript\CodeBleach.Processors.VbScript.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.OracleSql\CodeBleach.Processors.OracleSql.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.FSharp\CodeBleach.Processors.FSharp.fsproj" />
   </ItemGroup>
 </Project>
