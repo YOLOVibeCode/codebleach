@@ -192,7 +192,9 @@ public static class SanitizeCommand
             context.ProcessorRegistry = processorRegistry;
 
             // Prepare batch context for processors that need it (e.g., Roslyn compilation)
-            var filesToBatch = fileProcessor.GetFilesToProcess(source.FullName).ToList();
+            // Include extensionless files for Level 2 (mainframe FTP downloads often lack extensions)
+            var filesToBatch = fileProcessor.GetFilesToProcess(source.FullName,
+                includeExtensionless: true).ToList();
             foreach (var processor in processorRegistry.GetAll())
             {
                 var batchFiles = filesToBatch.Where(f => processor.SupportedExtensions.Contains(Path.GetExtension(f))).ToList();
@@ -213,7 +215,8 @@ public static class SanitizeCommand
             await fileProcessor.CopyDirectoryAsync(source.FullName, outputPath);
         }
 
-        var filesToProcess = fileProcessor.GetFilesToProcess(source.FullName).ToList();
+        var filesToProcess = fileProcessor.GetFilesToProcess(source.FullName,
+            includeExtensionless: obfuscationLevel == ObfuscationLevel.Full).ToList();
         totalFiles = filesToProcess.Count;
 
         foreach (var file in filesToProcess)

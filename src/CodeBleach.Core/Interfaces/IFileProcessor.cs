@@ -15,7 +15,10 @@ public interface IFileProcessor
     
     /// <summary>Gets all files to process in a directory.</summary>
     IEnumerable<string> GetFilesToProcess(string directoryPath);
-    
+
+    /// <summary>Gets all files to process, optionally including extensionless files (for Level 2 mainframe support).</summary>
+    IEnumerable<string> GetFilesToProcess(string directoryPath, bool includeExtensionless);
+
     /// <summary>Copies directory structure, skipping ignored paths.</summary>
     Task CopyDirectoryAsync(
         string sourcePath, 

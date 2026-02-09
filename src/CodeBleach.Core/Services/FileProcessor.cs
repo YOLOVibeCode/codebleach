@@ -101,11 +101,24 @@ public sealed class FileProcessor : IFileProcessor
         {
             return [];
         }
-        
+
         return Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
             .Where(f => !ShouldIgnore(f) && ShouldProcess(f));
     }
-    
+
+    public IEnumerable<string> GetFilesToProcess(string directoryPath, bool includeExtensionless)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            return [];
+        }
+
+        return Directory.EnumerateFiles(directoryPath, "*", SearchOption.AllDirectories)
+            .Where(f => !ShouldIgnore(f) &&
+                (ShouldProcess(f) ||
+                 (includeExtensionless && string.IsNullOrEmpty(Path.GetExtension(f)))));
+    }
+
     public async Task CopyDirectoryAsync(string sourcePath, string destinationPath, CancellationToken ct = default)
     {
         if (!Directory.Exists(sourcePath))

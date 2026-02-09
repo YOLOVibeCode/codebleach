@@ -753,4 +753,620 @@ public class MainframeCrossFileTests
 
         processor.Should().BeNull(because: "non-mainframe extensionless files should not match any processor");
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FileNameMapper with Mainframe Processor Output
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void FileNameMapper_CobolFile_GetsPgmAlias()
+    {
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        processor.Obfuscate(cobol, context, "payroll.cbl");
+
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["payroll.cbl"]);
+
+        context.Mappings.FilePathForward.Should().ContainKey("payroll.cbl");
+        context.Mappings.FilePathForward["payroll.cbl"].Should().MatchRegex(@"^PGM_\d+\.cbl$");
+    }
+
+    [Fact]
+    public void FileNameMapper_JclFile_GetsJobAlias()
+    {
+        var context = CreateContextWithRegistry();
+        var jclProcessor = new JclLanguageProcessor();
+
+        var jcl = "//PAYJOB   JOB (FIN01),'PAY RUN',CLASS=A\n//PAYSTEP  EXEC PGM=MYPROG\n//SYSPRINT DD SYSOUT=*\n//";
+        jclProcessor.Obfuscate(jcl, context, "payjob.jcl");
+
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["payjob.jcl"]);
+
+        context.Mappings.FilePathForward.Should().ContainKey("payjob.jcl");
+        context.Mappings.FilePathForward["payjob.jcl"].Should().MatchRegex(@"^JOB_\d+\.jcl$");
+    }
+
+    [Fact]
+    public void FileNameMapper_CopybookFile_GetsCpyAlias()
+    {
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        var copybook = BuildCobolSource(
+            "       01  WS-CUSTOMER-ID         PIC 9(8).",
+            "       01  WS-CUSTOMER-NAME       PIC X(40).");
+        processor.Obfuscate(copybook, context, "CUSTDATA.cpy");
+
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["CUSTDATA.cpy"]);
+
+        context.Mappings.FilePathForward.Should().ContainKey("CUSTDATA.cpy");
+        context.Mappings.FilePathForward["CUSTDATA.cpy"].Should().MatchRegex(@"^CPY_\d+\.cpy$");
+    }
+
+    [Fact]
+    public void FileNameMapper_ExtensionlessCopybook_GetsFileAlias()
+    {
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        // Extensionless copybook — self-registration only fires for .cpy files,
+        // so the COPY statement in mainpgm.cbl registers the alias with a location
+        // pointing to mainpgm.cbl, not to the extensionless copybook file.
+        // Without a SourceMap location pointing to "CUSTDATA", FindPrimaryTypeAlias
+        // won't match, and the file falls back to FILE_N.
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. MAINPGM.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY CUSTDATA.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        processor.Obfuscate(cobol, context, "mainpgm.cbl");
+
+        // Process the extensionless copybook file
+        var copybook = BuildCobolSource(
+            "       01  WS-CUSTOMER-ID         PIC 9(8).",
+            "       01  WS-CUSTOMER-NAME       PIC X(40).");
+        processor.Obfuscate(copybook, context, "CUSTDATA");
+
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["mainpgm.cbl", "CUSTDATA"]);
+
+        context.Mappings.FilePathForward.Should().ContainKey("CUSTDATA");
+        // With LooksLikeCopybook self-registration, extensionless copybooks now get CPY_N
+        context.Mappings.FilePathForward["CUSTDATA"].Should().MatchRegex(@"^CPY_\d+$");
+
+        // The copybook identifier is also registered with CPY_ prefix
+        context.Mappings.Forward.Should().ContainKey("CUSTDATA");
+        context.Mappings.Forward["CUSTDATA"].Should().StartWith("CPY_");
+    }
+
+    [Fact]
+    public void FileNameMapper_ExtensionlessJcl_GetsJobAlias()
+    {
+        var context = CreateContextWithRegistry();
+        var jclProcessor = new JclLanguageProcessor();
+
+        var jcl = "//RUNJOB   JOB (ACCT),'RUN',CLASS=A\n//STEP01   EXEC PGM=MYPROG\n//SYSPRINT DD SYSOUT=*\n//";
+        jclProcessor.Obfuscate(jcl, context, "RUNJOB");
+
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["RUNJOB"]);
+
+        context.Mappings.FilePathForward.Should().ContainKey("RUNJOB");
+        context.Mappings.FilePathForward["RUNJOB"].Should().MatchRegex(@"^JOB_\d+$");
+    }
+
+    [Fact]
+    public void FileNameMapper_MainframeBundle_AllRenamed_Bidirectional()
+    {
+        var context = CreateContextWithRegistry();
+        var jclProcessor = new JclLanguageProcessor();
+        var cobolProcessor = new CobolLanguageProcessor();
+
+        // Process all files
+        var jcl = "//RUNJOB   JOB (ACCT),'RUN',CLASS=A\n//STEP01   EXEC PGM=PAYROLL\n//SYSPRINT DD SYSOUT=*\n//";
+        jclProcessor.Obfuscate(jcl, context, "runjob.jcl");
+
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY EMPDATA.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        cobolProcessor.Obfuscate(cobol, context, "payroll.cbl");
+
+        var copybook = BuildCobolSource(
+            "       01  WS-EMP-ID              PIC 9(8).",
+            "       01  WS-EMP-NAME            PIC X(40).");
+        cobolProcessor.Obfuscate(copybook, context, "EMPDATA.cpy");
+
+        // Build file name mappings
+        var mapper = new FileNameMapper();
+        var files = new List<string> { "runjob.jcl", "payroll.cbl", "EMPDATA.cpy" };
+        mapper.BuildMappings(context, files);
+
+        // All files should have Strategy A aliases
+        context.Mappings.FilePathForward["runjob.jcl"].Should().MatchRegex(@"^JOB_\d+\.jcl$");
+        context.Mappings.FilePathForward["payroll.cbl"].Should().MatchRegex(@"^PGM_\d+\.cbl$");
+        context.Mappings.FilePathForward["EMPDATA.cpy"].Should().MatchRegex(@"^CPY_\d+\.cpy$");
+
+        // Bidirectional consistency
+        foreach (var (original, obfuscated) in context.Mappings.FilePathForward)
+        {
+            context.Mappings.FilePathReverse.Should().ContainKey(obfuscated);
+            context.Mappings.FilePathReverse[obfuscated].Should().Be(original);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // JCL DSN ↔ COBOL Correlation Tests
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void DsnMember_CorrelatesWithCobolProgramId()
+    {
+        var context = CreateContextWithRegistry();
+        var jclProcessor = new JclLanguageProcessor();
+        var cobolProcessor = new CobolLanguageProcessor();
+
+        // JCL with partitioned dataset member reference
+        var jcl = "//RUNJOB   JOB (ACCT),'RUN',CLASS=A\n//STEP01   EXEC PGM=BATCHPGM\n//STEPLIB  DD DSN=PROD.LOADLIB(PAYROLL),DISP=SHR\n//SYSPRINT DD SYSOUT=*\n//";
+        jclProcessor.Obfuscate(jcl, context, "runjob.jcl");
+
+        // The member name PAYROLL should be registered as a Program
+        context.Mappings.Forward.Should().ContainKey("PAYROLL");
+        var dsnMemberAlias = context.Mappings.Forward["PAYROLL"];
+        dsnMemberAlias.Should().StartWith("PGM_");
+
+        // COBOL program with matching PROGRAM-ID
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        var cobolResult = cobolProcessor.Obfuscate(cobol, context, "payroll.cbl");
+
+        // Same alias for DSN member and PROGRAM-ID
+        context.Mappings.Forward["PAYROLL"].Should().Be(dsnMemberAlias);
+        cobolResult.Content.Should().Contain($"PROGRAM-ID. {dsnMemberAlias}");
+    }
+
+    [Fact]
+    public void DsnDataset_ObfuscatedAndRestorable()
+    {
+        var context = CreateContextWithRegistry();
+        var jclProcessor = new JclLanguageProcessor();
+        var restorer = new Restorer();
+
+        var jcl = "//RUNJOB   JOB (ACCT),'RUN',CLASS=A\n//STEP01   EXEC PGM=MYPROG\n//INFILE   DD DSN=PROD.PAYROLL.DATA,DISP=SHR\n//SYSPRINT DD SYSOUT=*\n//";
+        var obfuscated = jclProcessor.Obfuscate(jcl, context, "runjob.jcl");
+
+        // DSN should be obfuscated
+        obfuscated.Content.Should().NotContain("PROD.PAYROLL.DATA");
+
+        // Dataset name should be in mapping table
+        context.Mappings.Forward.Should().ContainKey("PROD.PAYROLL.DATA");
+        context.Mappings.Forward["PROD.PAYROLL.DATA"].Should().StartWith("DSN_");
+
+        // Round-trip restore
+        var restored = restorer.Restore(obfuscated.Content, context.Mappings);
+        restored.Content.Should().Contain("PROD.PAYROLL.DATA");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DISP Preservation in Cross-File Bundle
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void DispValues_PreservedInCrossFileBundle()
+    {
+        var context = CreateContextWithRegistry();
+        var jclProcessor = new JclLanguageProcessor();
+        var cobolProcessor = new CobolLanguageProcessor();
+
+        // JCL with various DISP values
+        var jcl = string.Join("\n",
+            "//RUNJOB   JOB (ACCT),'RUN',CLASS=A",
+            "//STEP01   EXEC PGM=PAYROLL",
+            "//INFILE   DD DSN=PROD.MASTER.DATA,DISP=SHR",
+            "//OUTFILE  DD DSN=PROD.OUTPUT.DATA,DISP=(NEW,CATLG,DELETE),",
+            "//            SPACE=(CYL,(10,5)),UNIT=SYSDA",
+            "//SYSPRINT DD SYSOUT=*",
+            "//");
+        var jclResult = jclProcessor.Obfuscate(jcl, context, "runjob.jcl");
+
+        // COBOL program
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        cobolProcessor.Obfuscate(cobol, context, "payroll.cbl");
+
+        // All DISP values must survive obfuscation
+        jclResult.Content.Should().Contain("DISP=SHR");
+        jclResult.Content.Should().Contain("NEW");
+        jclResult.Content.Should().Contain("CATLG");
+        jclResult.Content.Should().Contain("DELETE");
+
+        // JCL structural keywords preserved
+        jclResult.Content.Should().Contain("EXEC PGM=");
+        jclResult.Content.Should().Contain("SPACE=");
+        jclResult.Content.Should().Contain("UNIT=");
+        jclResult.Content.Should().Contain("SYSOUT=*");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Copybook Reference Chain Tests
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void CopybookChain_MultipleProgramsShareCopybook_SameAlias()
+    {
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        // Program A copies SHARED-REC
+        var progA = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PROG-A.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY SHARED-REC.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        var resultA = processor.Obfuscate(progA, context, "proga.cbl");
+        var copyAliasFromA = context.Mappings.Forward["SHARED-REC"];
+
+        // Program B also copies SHARED-REC
+        var progB = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PROG-B.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY SHARED-REC.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        var resultB = processor.Obfuscate(progB, context, "progb.cbl");
+
+        // Copybook file itself
+        var copybook = BuildCobolSource(
+            "       01  WS-SHARED-ID           PIC 9(8).",
+            "       01  WS-SHARED-NAME         PIC X(40).");
+        processor.Obfuscate(copybook, context, "SHARED-REC.cpy");
+
+        // All three files use same alias
+        copyAliasFromA.Should().StartWith("CPY_");
+        context.Mappings.Forward["SHARED-REC"].Should().Be(copyAliasFromA);
+        resultA.Content.Should().Contain($"COPY {copyAliasFromA}");
+        resultB.Content.Should().Contain($"COPY {copyAliasFromA}");
+    }
+
+    [Fact]
+    public void ExtensionlessCopybookChain_SameAliasAcrossFiles()
+    {
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        // Extensionless COBOL program with COPY
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. MAINPGM.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY RECDATA.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        var cobolResult = processor.Obfuscate(cobol, context, "MAINPGM");
+        var copyAlias = context.Mappings.Forward["RECDATA"];
+
+        // Extensionless copybook file
+        var copybook = BuildCobolSource(
+            "       01  WS-REC-ID              PIC 9(8).",
+            "       01  WS-REC-NAME            PIC X(30).");
+        processor.Obfuscate(copybook, context, "RECDATA");
+
+        // Alias consistency across extensionless files
+        copyAlias.Should().StartWith("CPY_");
+        context.Mappings.Forward["RECDATA"].Should().Be(copyAlias);
+        cobolResult.Content.Should().Contain($"COPY {copyAlias}");
+    }
+
+    [Fact]
+    public void CopybookChain_FileNameMapper_CpyFileCorrelatesWithCopyRef()
+    {
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        // COBOL program references CUSTDATA via COPY
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. MAINPGM.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY CUSTDATA.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        processor.Obfuscate(cobol, context, "mainpgm.cbl");
+        var copyAlias = context.Mappings.Forward["CUSTDATA"];
+
+        // Process the copybook file
+        var copybook = BuildCobolSource(
+            "       01  WS-CUST-ID             PIC 9(8).",
+            "       01  WS-CUST-NAME           PIC X(40).");
+        processor.Obfuscate(copybook, context, "CUSTDATA.cpy");
+
+        // Run FileNameMapper
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["mainpgm.cbl", "CUSTDATA.cpy"]);
+
+        // The .cpy file name should correlate with the COPY reference alias
+        var cpyFilePath = context.Mappings.FilePathForward["CUSTDATA.cpy"];
+        cpyFilePath.Should().Be($"{copyAlias}.cpy",
+            because: "copybook file name alias should match the COPY statement alias");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Enterprise FTP Extensionless Edge Cases
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Extensionless_CopybookSelfRegistration_GetsFileMapperCpyAlias()
+    {
+        // Extensionless copybook with PIC clauses → self-registers as Copybook → CPY_N via FileNameMapper
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        var copybook = BuildCobolSource(
+            "       01  WS-EMP-ID             PIC 9(8).",
+            "       01  WS-EMP-NAME           PIC X(40).");
+        processor.Obfuscate(copybook, context, "EMPDATA");
+
+        // Self-registration should have created a Copybook alias
+        context.Mappings.Forward.Should().ContainKey("EMPDATA");
+        context.Mappings.Forward["EMPDATA"].Should().StartWith("CPY_");
+
+        // FileNameMapper should use that CPY alias for the file name
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["EMPDATA"]);
+
+        var newPath = context.Mappings.FilePathForward["EMPDATA"];
+        newPath.Should().StartWith("CPY_",
+            because: "extensionless copybook should get CPY_N alias via self-registration");
+    }
+
+    [Fact]
+    public void Extensionless_CobolProgram_DoesNotSelfRegisterAsCopybook()
+    {
+        // Full COBOL program (has IDENTIFICATION DIVISION) → NOT a copybook
+        var context = CreateContextWithRegistry();
+        var processor = new CobolLanguageProcessor();
+
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       01  WS-COUNT             PIC 9(4).",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        processor.Obfuscate(cobol, context, "PAYROLL");
+
+        // PAYROLL should be registered as Program, not Copybook
+        context.Mappings.Forward.Should().ContainKey("PAYROLL");
+        context.Mappings.Forward["PAYROLL"].Should().StartWith("PGM_");
+    }
+
+    [Fact]
+    public void Extensionless_CopybookWithCopyStatements_Detected()
+    {
+        // Extensionless file with only COPY statements → CanProcess returns true
+        var processor = new CobolLanguageProcessor();
+        var content = "       COPY EMPRECORD.\n       COPY DEPTDATA.\n";
+        ((ILanguageProcessor)processor).CanProcess("", content).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Extensionless_88LevelOnly_NotDetected()
+    {
+        // 88-level conditions alone → CanProcess returns false (documented limitation)
+        var processor = new CobolLanguageProcessor();
+        var content = "       88  SUCCESS               VALUE 1.\n"
+                    + "       88  FAILURE               VALUE 0.\n";
+        ((ILanguageProcessor)processor).CanProcess("", content).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Extensionless_LowercaseCobol_Detected()
+    {
+        var processor = new CobolLanguageProcessor();
+        var content = "       identification division.\n       program-id. testpgm.\n";
+        ((ILanguageProcessor)processor).CanProcess("", content).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Extensionless_SequenceNumberedCobol_Detected()
+    {
+        // Sequence-numbered COBOL (columns 1-6 are numbers)
+        var processor = new CobolLanguageProcessor();
+        var content = "000100 IDENTIFICATION DIVISION.\n000200 PROGRAM-ID. TESTPGM.\n";
+        ((ILanguageProcessor)processor).CanProcess("", content).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Extensionless_JclProc_Detected()
+    {
+        // Cataloged JCL procedure (no JOB card, starts with // PROC)
+        var registry = new LanguageProcessorRegistry();
+        registry.Register(new JclLanguageProcessor());
+        var content = "//MYPROC  PROC\n//STEP1   EXEC PGM=SORT\n//SORTIN  DD DSN=INPUT.FILE,DISP=SHR\n// PEND\n";
+        var processor = registry.GetProcessor("", content);
+        processor.Should().NotBeNull();
+        processor!.ProcessorId.Should().Be("jcl");
+    }
+
+    [Fact]
+    public void Extensionless_PlainText_NoProcessorMatches()
+    {
+        var registry = new LanguageProcessorRegistry();
+        registry.Register(new SqlLanguageProcessor());
+        registry.Register(new CobolLanguageProcessor());
+        registry.Register(new JclLanguageProcessor());
+        var content = "This is just a plain text file with no code markers whatsoever.\nIt has multiple lines but no programming constructs.\n";
+        var processor = registry.GetProcessor("", content);
+        processor.Should().BeNull();
+    }
+
+    [Fact]
+    public void Extensionless_EmptyFile_NoProcessorMatches()
+    {
+        var registry = new LanguageProcessorRegistry();
+        registry.Register(new SqlLanguageProcessor());
+        registry.Register(new CobolLanguageProcessor());
+        registry.Register(new JclLanguageProcessor());
+        var processor = registry.GetProcessor("", "   \n  \n");
+        processor.Should().BeNull();
+    }
+
+    [Fact]
+    public void Extensionless_FtpBundle_FullCrossCorrelation()
+    {
+        // Full FTP-style bundle: JCL + COBOL + copybook, all extensionless
+        var context = CreateContextWithRegistry();
+        var cobolProcessor = new CobolLanguageProcessor();
+        var jclProcessor = new JclLanguageProcessor();
+
+        // 1. Process the COBOL program (extensionless)
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY EMPDATA.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           DISPLAY 'HELLO'.",
+            "           STOP RUN.");
+        cobolProcessor.Obfuscate(cobol, context, "PAYROLL");
+
+        // 2. Process the copybook (extensionless, no DIVISION headers)
+        var copybook = BuildCobolSource(
+            "       01  WS-EMP-ID             PIC 9(8).",
+            "       01  WS-EMP-NAME           PIC X(40).");
+        cobolProcessor.Obfuscate(copybook, context, "EMPDATA");
+
+        // 3. Process the JCL job (extensionless)
+        var jcl = "//RUNJOB  JOB (ACCT),'BATCH',CLASS=A\n"
+                + "//STEP1   EXEC PGM=PAYROLL\n"
+                + "//INFILE  DD DSN=PROD.EMP.DATA,DISP=SHR\n";
+        ((ILanguageProcessor)jclProcessor).Obfuscate(jcl, context, "RUNJOB");
+
+        // Verify cross-correlation
+        var payrollAlias = context.Mappings.Forward["PAYROLL"];
+        var empdataAlias = context.Mappings.Forward["EMPDATA"];
+
+        // JCL PGM=PAYROLL should get the same alias as COBOL PROGRAM-ID PAYROLL
+        payrollAlias.Should().StartWith("PGM_");
+
+        // Copybook EMPDATA should get CPY_ prefix (self-registered by LooksLikeCopybook)
+        empdataAlias.Should().StartWith("CPY_");
+
+        // FileNameMapper: all three extensionless files get correct aliases
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["PAYROLL", "EMPDATA", "RUNJOB"]);
+
+        var payrollPath = context.Mappings.FilePathForward["PAYROLL"];
+        var empdataPath = context.Mappings.FilePathForward["EMPDATA"];
+        var runjobPath = context.Mappings.FilePathForward["RUNJOB"];
+
+        payrollPath.Should().StartWith("PGM_",
+            because: "extensionless COBOL program should get PGM_N file name");
+        empdataPath.Should().StartWith("CPY_",
+            because: "extensionless copybook should get CPY_N file name");
+        runjobPath.Should().StartWith("JOB_",
+            because: "extensionless JCL should get JOB_N file name");
+    }
+
+    [Fact]
+    public void Extensionless_MixedBundle_WithAndWithoutExtensions()
+    {
+        // Mix of files with and without extensions → all processed correctly
+        var context = CreateContextWithRegistry();
+        var cobolProcessor = new CobolLanguageProcessor();
+        var jclProcessor = new JclLanguageProcessor();
+
+        // Extensionless COBOL program
+        var cobol1 = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        cobolProcessor.Obfuscate(cobol1, context, "PAYROLL");
+
+        // COBOL program with extension
+        var cobol2 = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. BILLING.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           CALL 'PAYROLL'.",
+            "           STOP RUN.");
+        cobolProcessor.Obfuscate(cobol2, context, "billing.cbl");
+
+        // Extensionless copybook
+        var copybook = BuildCobolSource(
+            "       01  WS-AMT             PIC 9(8)V99.");
+        cobolProcessor.Obfuscate(copybook, context, "AMOUNTS");
+
+        // JCL with extension
+        var jcl = "//RUNJOB  JOB (ACCT),'BATCH',CLASS=A\n"
+                + "//STEP1   EXEC PGM=PAYROLL\n"
+                + "//STEP2   EXEC PGM=BILLING\n";
+        ((ILanguageProcessor)jclProcessor).Obfuscate(jcl, context, "runjob.jcl");
+
+        // Cross-file consistency: PAYROLL alias is the same everywhere
+        var payrollAlias = context.Mappings.Forward["PAYROLL"];
+        var billingAlias = context.Mappings.Forward["BILLING"];
+
+        payrollAlias.Should().StartWith("PGM_");
+        billingAlias.Should().StartWith("PGM_");
+
+        // FileNameMapper handles mixed extension/extensionless
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["PAYROLL", "billing.cbl", "AMOUNTS", "runjob.jcl"]);
+
+        context.Mappings.FilePathForward["PAYROLL"].Should().StartWith("PGM_");
+        context.Mappings.FilePathForward["billing.cbl"].Should().EndWith(".cbl");
+        context.Mappings.FilePathForward["AMOUNTS"].Should().StartWith("CPY_");
+        context.Mappings.FilePathForward["runjob.jcl"].Should().EndWith(".jcl");
+    }
 }

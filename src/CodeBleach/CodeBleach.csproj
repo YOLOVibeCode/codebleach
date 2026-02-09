@@ -13,7 +13,7 @@
     
     <!-- NuGet Metadata -->
     <PackageId>CodeBleach</PackageId>
-        <Version>2.2.0</Version>
+        <Version>2.3.0</Version>
     <Authors>YOLOVibeCode</Authors>
     <Description>Industrial-grade multi-language code obfuscator for sharing code with AI assistants. AST-aware obfuscation for C#, VB.NET, T-SQL, JavaScript, COBOL, JCL, VBScript/VBA, Oracle SQL/PL-SQL, and F#. Renames all identifiers, removes comments, obfuscates strings, and renames files so compromised LLM context reveals no organizational fingerprint.</Description>
     <PackageTags>cli;sanitization;security;ai;privacy;codebleach;obfuscation;ast;roslyn;llm</PackageTags>

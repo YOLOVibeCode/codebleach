@@ -416,6 +416,17 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
 
     // ── ILanguageProcessor methods ──────────────────────────────────────
 
+    /// <summary>
+    /// Heuristic: file has PIC/PICTURE clauses but no DIVISION headers → data-only copybook fragment.
+    /// </summary>
+    private static bool LooksLikeCopybook(string content)
+    {
+        var upper = content.ToUpperInvariant();
+        return (upper.Contains("PIC ") || upper.Contains("PICTURE "))
+            && !upper.Contains("IDENTIFICATION DIVISION")
+            && !upper.Contains("PROCEDURE DIVISION");
+    }
+
     public bool CanProcess(string filePath, string content)
     {
         if (string.IsNullOrWhiteSpace(filePath) && string.IsNullOrWhiteSpace(content))
@@ -438,6 +449,8 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                 || upper.Contains("DATA DIVISION")
                 || upper.Contains("WORKING-STORAGE SECTION")
                 || Regex.IsMatch(content, @"^\s+\d{2}\s+[\w-]+\s+PIC\s",
+                    RegexOptions.Multiline | RegexOptions.IgnoreCase)
+                || Regex.IsMatch(content, @"^\s+COPY\s+[\w-]+",
                     RegexOptions.Multiline | RegexOptions.IgnoreCase);
         }
 
@@ -466,11 +479,21 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             // Resolve multi-line EXEC blocks into single logical classifications
             ResolveExecBlocks(lines);
 
-            // Self-register copybook files so FileNameMapper can correlate them
-            if (filePath != null && Path.GetExtension(filePath).Equals(".cpy", StringComparison.OrdinalIgnoreCase))
+            // Self-register copybook files so FileNameMapper can correlate them.
+            // For .cpy files: always self-register.
+            // For extensionless files: self-register if content looks like a copybook
+            // (PIC/PICTURE clauses without DIVISION headers = data-only fragment).
+            if (filePath != null)
             {
-                var stem = Path.GetFileNameWithoutExtension(filePath).ToUpperInvariant();
-                context.GetOrCreateAlias(stem, SemanticCategory.Copybook, filePath, 1);
+                var ext = Path.GetExtension(filePath);
+                if (ext.Equals(".cpy", StringComparison.OrdinalIgnoreCase) ||
+                    (string.IsNullOrEmpty(ext) && LooksLikeCopybook(content)))
+                {
+                    var stem = string.IsNullOrEmpty(ext)
+                        ? Path.GetFileName(filePath).ToUpperInvariant()
+                        : Path.GetFileNameWithoutExtension(filePath).ToUpperInvariant();
+                    context.GetOrCreateAlias(stem, SemanticCategory.Copybook, filePath, 1);
+                }
             }
 
             // Pass 1: Discovery - collect all user-defined identifiers

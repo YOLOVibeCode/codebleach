@@ -84,6 +84,38 @@ public class CobolLanguageProcessorTests
         _processor.CanProcess("", "").Should().BeFalse();
     }
 
+    [Fact]
+    public void CanProcess_CopyOnlyContent_ReturnsTrue()
+    {
+        var content = "       COPY EMPRECORD.\n";
+        _processor.CanProcess("", content).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanProcess_PicClausesOnly_ReturnsTrue()
+    {
+        // Copybook fragment: PIC clauses without DIVISION headers
+        var content = "       01  WS-EMP-ID             PIC 9(8).\n"
+                    + "       01  WS-EMP-NAME           PIC X(40).\n";
+        _processor.CanProcess("", content).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanProcess_88LevelOnly_ReturnsFalse()
+    {
+        // 88-level conditions alone are not enough to detect COBOL
+        var content = "       88  SUCCESS               VALUE 1.\n"
+                    + "       88  FAILURE               VALUE 0.\n";
+        _processor.CanProcess("", content).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanProcess_LowercaseCobol_ReturnsTrue()
+    {
+        var content = "       identification division.\n       program-id. testpgm.\n";
+        _processor.CanProcess("", content).Should().BeTrue();
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Obfuscate - Empty / Null Input
     // ═══════════════════════════════════════════════════════════════════
@@ -1139,6 +1171,70 @@ public class CobolLanguageProcessorTests
 
         result.WasTransformed.Should().BeTrue();
         result.Content.Should().NotContain("WS-MAP-NAME");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Obfuscate - CALL 'literal'
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void Obfuscate_CallLiteral_TargetReplaced()
+    {
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. TEST-PGM.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           CALL 'SUBPROG'",
+            "           STOP RUN.");
+        var ctx = CreateContext();
+
+        var result = _processor.Obfuscate(cobol, ctx, "test.cbl");
+
+        result.WasTransformed.Should().BeTrue();
+        result.Content.Should().NotContain("SUBPROG");
+        result.Content.Should().Contain("CALL 'PGM_");
+    }
+
+    [Fact]
+    public void Obfuscate_CallLiteral_MappingRegistered()
+    {
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. TEST-PGM.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           CALL 'TARGETPGM'",
+            "           STOP RUN.");
+        var ctx = CreateContext();
+
+        _processor.Obfuscate(cobol, ctx, "test.cbl");
+
+        ctx.Mappings.Forward.Should().ContainKey("TARGETPGM");
+        ctx.Mappings.Forward["TARGETPGM"].Should().StartWith("PGM_");
+    }
+
+    [Fact]
+    public void Obfuscate_CallLiteral_CrossRef_Recorded()
+    {
+        var cobol = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. TEST-PGM.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           CALL 'SUBPROG'",
+            "           STOP RUN.");
+        var ctx = CreateContext();
+
+        _processor.Obfuscate(cobol, ctx, "test.cbl");
+
+        ctx.SourceMap.CrossReferences.Should().Contain(cr =>
+            cr.SourceLanguage == "COBOL" &&
+            cr.TargetLanguage == "COBOL" &&
+            cr.Description.Contains("SUBPROG"));
     }
 
     // ═══════════════════════════════════════════════════════════════════
