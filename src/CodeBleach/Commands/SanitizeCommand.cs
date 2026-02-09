@@ -38,8 +38,8 @@ public static class SanitizeCommand
             "Path to custom rules file (overrides auto-discovery)");
         var levelOption = new Option<int>(
             new[] { "--level", "-l" },
-            () => 1,
-            "Obfuscation level: 1=sanitize patterns only (default), 2=full identifier obfuscation");
+            () => 2,
+            "Obfuscation level: 1=sanitize patterns only, 2=full identifier obfuscation (default)");
         var verifyOption = new Option<bool>(
             "--verify",
             "Build the output after obfuscation to verify correctness");
@@ -105,7 +105,7 @@ public static class SanitizeCommand
         {
             1 => ObfuscationLevel.Sanitize,
             2 => ObfuscationLevel.Full,
-            _ => ObfuscationLevel.Sanitize
+            _ => ObfuscationLevel.Full
         };
 
         var outputPath = output?.FullName ?? $"{source.FullName}-sanitize";
