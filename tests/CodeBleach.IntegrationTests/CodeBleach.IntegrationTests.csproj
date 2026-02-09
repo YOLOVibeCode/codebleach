@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\CodeBleach.Processors.VisualBasic\CodeBleach.Processors.VisualBasic.csproj" />
     <ProjectReference Include="..\..\src\CodeBleach.Processors.Sql\CodeBleach.Processors.Sql.csproj" />
     <ProjectReference Include="..\..\src\CodeBleach.Processors.JavaScript\CodeBleach.Processors.JavaScript.csproj" />
+    <ProjectReference Include="..\..\src\CodeBleach.Processors.Cobol\CodeBleach.Processors.Cobol.csproj" />
     <ProjectReference Include="..\..\src\CodeBleach.Processors.Jcl\CodeBleach.Processors.Jcl.csproj" />
     <ProjectReference Include="..\..\src\CodeBleach.Processors.VbScript\CodeBleach.Processors.VbScript.csproj" />
     <ProjectReference Include="..\..\src\CodeBleach.Processors.OracleSql\CodeBleach.Processors.OracleSql.csproj" />

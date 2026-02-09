@@ -464,6 +464,13 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             // Resolve multi-line EXEC blocks into single logical classifications
             ResolveExecBlocks(lines);
 
+            // Self-register copybook files so FileNameMapper can correlate them
+            if (filePath != null && Path.GetExtension(filePath).Equals(".cpy", StringComparison.OrdinalIgnoreCase))
+            {
+                var stem = Path.GetFileNameWithoutExtension(filePath).ToUpperInvariant();
+                context.GetOrCreateAlias(stem, SemanticCategory.Copybook, filePath, 1);
+            }
+
             // Pass 1: Discovery - collect all user-defined identifiers
             var identifiers = DiscoverIdentifiers(lines, filePath, warnings);
 
@@ -765,6 +772,9 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                         // Check for PROGRAM-ID in IDENTIFICATION DIVISION (may be classified as ProcedureStatement)
                         DiscoverProgramId(line, identifiers);
 
+                        // Check for CALL 'program-name' (static calls)
+                        DiscoverCallLiteral(line, identifiers);
+
                         // Check for FD/SD statements
                         var fdFile = DiscoverFileDescription(line, identifiers);
                         if (fdFile != null)
@@ -774,8 +784,9 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                         break;
 
                     case CobolLineType.Other:
-                        // Also check for PROGRAM-ID and FD here
+                        // Also check for PROGRAM-ID, CALL, and FD here
                         DiscoverProgramId(line, identifiers);
+                        DiscoverCallLiteral(line, identifiers);
                         var fdFile2 = DiscoverFileDescription(line, identifiers);
                         if (fdFile2 != null)
                         {
@@ -957,6 +968,30 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
     }
 
     /// <summary>
+    /// Discover CALL 'program-name' literal (static CALL).
+    /// </summary>
+    private static void DiscoverCallLiteral(CobolLine line, List<DiscoveredIdentifier> identifiers)
+    {
+        var combined = (line.AreaA + line.AreaB).Trim();
+        var match = Regex.Match(combined, @"CALL\s+'([\w-]+)'", RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            var programName = match.Groups[1].Value;
+            if (!ReservedWords.Contains(programName))
+            {
+                identifiers.Add(new DiscoveredIdentifier
+                {
+                    OriginalName = programName.ToUpperInvariant(),
+                    Category = SemanticCategory.Program,
+                    LineNumber = line.LineNumber,
+                    ColumnStart = match.Groups[1].Index + 8,
+                    ColumnEnd = match.Groups[1].Index + 8 + programName.Length
+                });
+            }
+        }
+    }
+
+    /// <summary>
     /// Discover FD/SD file descriptions.
     /// Returns the file name if found, null otherwise.
     /// </summary>
@@ -1041,7 +1076,7 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                 return ReplaceDataDefinition(line, aliasMap);
 
             case CobolLineType.CopyStatement:
-                return ReplaceCopyStatement(line, aliasMap);
+                return ReplaceCopyStatement(line, aliasMap, context, filePath);
 
             case CobolLineType.ExecSqlBlock:
                 return ReplaceExecSqlBlock(line, aliasMap, context, filePath);
@@ -1052,7 +1087,7 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             case CobolLineType.ProcedureStatement:
             case CobolLineType.Other:
             default:
-                return ReplaceProcedureStatement(line, aliasMap);
+                return ReplaceProcedureStatement(line, aliasMap, context, filePath);
         }
     }
 
@@ -1158,6 +1193,22 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
     {
         var combined = line.AreaA + line.AreaB;
         int count = 0;
+
+        // Check for PROGRAM-ID (can be classified as ParagraphHeader)
+        var progIdMatch = Regex.Match(combined, @"(PROGRAM-ID\s*\.\s*)([\w-]+)",
+            RegexOptions.IgnoreCase);
+        if (progIdMatch.Success)
+        {
+            var progName = progIdMatch.Groups[2].Value.ToUpperInvariant();
+            if (aliasMap.TryGetValue(progName, out var progAlias))
+            {
+                combined = combined[..progIdMatch.Groups[2].Index]
+                    + progAlias
+                    + combined[(progIdMatch.Groups[2].Index + progIdMatch.Groups[2].Length)..];
+                count++;
+            }
+            return (RebuildFromCombined(line, combined), count);
+        }
 
         // Paragraph header: NAME. or NAME (at start)
         var match = Regex.Match(combined, @"^(\s*)([\w-]+)(.*)$");
@@ -1283,7 +1334,9 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
     /// </summary>
     private static (string NewLine, int Count) ReplaceCopyStatement(
         CobolLine line,
-        Dictionary<string, string> aliasMap)
+        Dictionary<string, string> aliasMap,
+        ObfuscationContext context,
+        string? filePath)
     {
         var combined = line.AreaA + line.AreaB;
         int count = 0;
@@ -1299,6 +1352,16 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                     + alias
                     + combined[(match.Groups[2].Index + match.Groups[2].Length)..];
                 count++;
+
+                // Record COBOL→Copybook cross-reference
+                context.AddCrossReference(new CrossLanguageReference
+                {
+                    Alias = alias,
+                    SourceLanguage = "COBOL",
+                    TargetLanguage = "Copybook",
+                    SourceFile = filePath,
+                    Description = $"COBOL COPY statement includes copybook {copyName} as {alias}"
+                });
             }
         }
 
@@ -1569,7 +1632,9 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
     /// </summary>
     private static (string NewLine, int Count) ReplaceProcedureStatement(
         CobolLine line,
-        Dictionary<string, string> aliasMap)
+        Dictionary<string, string> aliasMap,
+        ObfuscationContext context,
+        string? filePath)
     {
         var combined = line.AreaA + line.AreaB;
         int count = 0;
@@ -1602,6 +1667,31 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                 count++;
             }
             return (RebuildFromCombined(line, combined), count);
+        }
+
+        // Check for CALL 'program-name' (static call with literal)
+        var callMatch = Regex.Match(combined, @"(CALL\s+')([\w-]+)(')",
+            RegexOptions.IgnoreCase);
+        if (callMatch.Success)
+        {
+            var callTarget = callMatch.Groups[2].Value.ToUpperInvariant();
+            if (aliasMap.TryGetValue(callTarget, out var callAlias))
+            {
+                combined = combined[..callMatch.Groups[2].Index]
+                    + callAlias
+                    + combined[(callMatch.Groups[2].Index + callMatch.Groups[2].Length)..];
+                count++;
+
+                // Record COBOL→COBOL cross-reference for the CALL
+                context.AddCrossReference(new CrossLanguageReference
+                {
+                    Alias = callAlias,
+                    SourceLanguage = "COBOL",
+                    TargetLanguage = "COBOL",
+                    SourceFile = filePath,
+                    Description = $"COBOL CALL invokes subprogram {callTarget} as {callAlias}"
+                });
+            }
         }
 
         // General identifier replacement in procedure statements

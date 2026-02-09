@@ -809,7 +809,17 @@ public sealed class JclLanguageProcessor : ILanguageProcessor
         if (pgmMatch.Success)
         {
             var pgmName = pgmMatch.Groups["pgm"].Value;
-            context.GetOrCreateAlias(pgmName, SemanticCategory.Program, filePath, line.LineNumber);
+            var pgmAlias = context.GetOrCreateAlias(pgmName, SemanticCategory.Program, filePath, line.LineNumber);
+
+            // Record JCL→COBOL cross-reference
+            context.AddCrossReference(new CrossLanguageReference
+            {
+                Alias = pgmAlias,
+                SourceLanguage = "JCL",
+                TargetLanguage = "COBOL",
+                SourceFile = filePath,
+                Description = $"JCL step executes COBOL program {pgmName} as {pgmAlias}"
+            });
         }
         else
         {
