@@ -568,4 +568,189 @@ public class MainframeCrossFileTests
         resultB.Content.Should().Contain($"CALL '{aliasC}'");
         resultC.Content.Should().Contain($"PROGRAM-ID. {aliasC}");
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Extensionless Mainframe File Tests
+    // ═══════════════════════════════════════════════════════════════════
+
+    private static LanguageProcessorRegistry CreateRegistry()
+    {
+        var registry = new LanguageProcessorRegistry();
+        registry.Register(new SqlLanguageProcessor());
+        registry.Register(new CobolLanguageProcessor());
+        registry.Register(new JclLanguageProcessor());
+        return registry;
+    }
+
+    [Fact]
+    public void ExtensionlessCobol_RegistryReturnsProcessor()
+    {
+        var registry = CreateRegistry();
+        var cobolContent = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        var processor = registry.GetProcessor("PAYROLL", cobolContent);
+
+        processor.Should().NotBeNull();
+        processor!.ProcessorId.Should().Be("cobol");
+    }
+
+    [Fact]
+    public void ExtensionlessJcl_RegistryReturnsProcessor()
+    {
+        var registry = CreateRegistry();
+        var jclContent = "//RUNJOB   JOB (ACCT),'RUN',CLASS=A\n//STEP01   EXEC PGM=MYPROG\n//SYSPRINT DD SYSOUT=*\n//";
+        var processor = registry.GetProcessor("RUNJOB", jclContent);
+
+        processor.Should().NotBeNull();
+        processor!.ProcessorId.Should().Be("jcl");
+    }
+
+    [Fact]
+    public void ExtensionlessCopybook_DetectedByPicHeuristic()
+    {
+        var registry = CreateRegistry();
+        var copybookContent = BuildCobolSource(
+            "       01  WS-CUSTOMER-ID         PIC 9(8).",
+            "       01  WS-CUSTOMER-NAME       PIC X(40).",
+            "       01  WS-CUSTOMER-BALANCE    PIC 9(9)V99.");
+        var processor = registry.GetProcessor("CUSTDATA", copybookContent);
+
+        processor.Should().NotBeNull();
+        processor!.ProcessorId.Should().Be("cobol");
+    }
+
+    [Fact]
+    public void ExtensionlessCobol_DetectedAndProcessed()
+    {
+        var context = CreateContextWithRegistry();
+        var registry = context.ProcessorRegistry!;
+
+        var cobolContent = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       01  WS-AMOUNT              PIC 9(9)V99.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+
+        var processor = registry.GetProcessor("PAYROLL", cobolContent);
+        processor.Should().NotBeNull();
+
+        var result = processor!.Obfuscate(cobolContent, context, "PAYROLL");
+        result.WasTransformed.Should().BeTrue();
+        result.Content.Should().NotContain("PAYROLL");
+        result.Content.Should().NotContain("WS-AMOUNT");
+        context.Mappings.Forward.Should().ContainKey("PAYROLL");
+        context.Mappings.Forward["PAYROLL"].Should().StartWith("PGM_");
+    }
+
+    [Fact]
+    public void ExtensionlessJcl_DetectedAndProcessed()
+    {
+        var context = CreateContextWithRegistry();
+        var registry = context.ProcessorRegistry!;
+
+        var jclContent = "//RUNJOB   JOB (ACCT),'RUN',CLASS=A\n//STEP01   EXEC PGM=BATCHPGM\n//SYSPRINT DD SYSOUT=*\n//";
+
+        var processor = registry.GetProcessor("RUNJOB", jclContent);
+        processor.Should().NotBeNull();
+
+        var result = processor!.Obfuscate(jclContent, context, "RUNJOB");
+        result.WasTransformed.Should().BeTrue();
+        result.Content.Should().NotContain("RUNJOB");
+        result.Content.Should().NotContain("BATCHPGM");
+    }
+
+    [Fact]
+    public void ExtensionlessBundle_CrossFileCorrelation()
+    {
+        var context = CreateContextWithRegistry();
+        var registry = context.ProcessorRegistry!;
+
+        // JCL (no extension)
+        var jclContent = "//RUNJOB   JOB (ACCT),'RUN',CLASS=A\n//STEP01   EXEC PGM=PAYROLL\n//SYSPRINT DD SYSOUT=*\n//";
+        var jclProcessor = registry.GetProcessor("RUNJOB", jclContent);
+        jclProcessor.Should().NotBeNull();
+        jclProcessor!.Obfuscate(jclContent, context, "RUNJOB");
+        var payrollAlias = context.Mappings.Forward["PAYROLL"];
+
+        // COBOL (no extension)
+        var cobolContent = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       WORKING-STORAGE SECTION.",
+            "       COPY EMPDATA.",
+            "       01  WS-AMOUNT              PIC 9(9)V99.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           CALL 'TAXCALC'",
+            "           STOP RUN.");
+        var cobolProcessor = registry.GetProcessor("PAYROLL", cobolContent);
+        cobolProcessor.Should().NotBeNull();
+        var cobolResult = cobolProcessor!.Obfuscate(cobolContent, context, "PAYROLL");
+
+        // Copybook (no extension, no DIVISION headers, just PIC clauses)
+        var cpyContent = BuildCobolSource(
+            "       01  WS-EMP-ID              PIC 9(8).",
+            "       01  WS-EMP-NAME            PIC X(40).");
+        var cpyProcessor = registry.GetProcessor("EMPDATA", cpyContent);
+        cpyProcessor.Should().NotBeNull();
+        cpyProcessor!.Obfuscate(cpyContent, context, "EMPDATA");
+
+        // Cross-file correlation works without extensions
+        payrollAlias.Should().StartWith("PGM_");
+        cobolResult.Content.Should().Contain($"PROGRAM-ID. {payrollAlias}");
+
+        var taxcalcAlias = context.Mappings.Forward["TAXCALC"];
+        taxcalcAlias.Should().StartWith("PGM_");
+        cobolResult.Content.Should().Contain($"CALL '{taxcalcAlias}'");
+
+        var empdataAlias = context.Mappings.Forward["EMPDATA"];
+        empdataAlias.Should().StartWith("CPY_");
+        cobolResult.Content.Should().Contain($"COPY {empdataAlias}");
+    }
+
+    [Fact]
+    public void ExtensionlessFiles_FileNameMapper_StrategyA()
+    {
+        var context = CreateContextWithRegistry();
+        var cobolProcessor = new CobolLanguageProcessor();
+
+        // Process extensionless COBOL file
+        var cobolContent = BuildCobolSource(
+            "       IDENTIFICATION DIVISION.",
+            "       PROGRAM-ID. PAYROLL.",
+            "       DATA DIVISION.",
+            "       PROCEDURE DIVISION.",
+            "       MAIN-PARA.",
+            "           STOP RUN.");
+        cobolProcessor.Obfuscate(cobolContent, context, "PAYROLL");
+        var payrollAlias = context.Mappings.Forward["PAYROLL"];
+
+        // FileNameMapper should derive alias from primary type
+        var mapper = new FileNameMapper();
+        mapper.BuildMappings(context, ["PAYROLL"]);
+
+        context.Mappings.FilePathForward.Should().ContainKey("PAYROLL");
+        var mappedPath = context.Mappings.FilePathForward["PAYROLL"];
+        mappedPath.Should().Be(payrollAlias, because: "extensionless COBOL file should get PGM_N name from Strategy A");
+    }
+
+    [Fact]
+    public void ExtensionlessNonMainframe_FallsToNull()
+    {
+        var registry = CreateRegistry();
+        var plainText = "This is just a plain text file\nwith no COBOL or JCL markers.";
+        var processor = registry.GetProcessor("README", plainText);
+
+        processor.Should().BeNull(because: "non-mainframe extensionless files should not match any processor");
+    }
 }

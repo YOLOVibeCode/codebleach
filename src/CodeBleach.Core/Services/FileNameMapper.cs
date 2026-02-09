@@ -90,6 +90,12 @@ public sealed class FileNameMapper
                 newStem = FindPrimaryTypeAlias(context, normalized, stem)
                           ?? $"FILE_{_fileCounter++}";
             }
+            else if (string.IsNullOrEmpty(extension))
+            {
+                // Extensionless files: try Strategy A first (mainframe files often lack extensions)
+                newStem = FindPrimaryTypeAlias(context, normalized, stem)
+                          ?? $"FILE_{_fileCounter++}";
+            }
             else
             {
                 // Strategy B: FILE_N

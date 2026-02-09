@@ -33,6 +33,16 @@ public sealed class LanguageProcessorRegistry : ILanguageProcessorRegistry
         var extension = Path.GetExtension(filePath);
         if (string.IsNullOrEmpty(extension))
         {
+            // Extensionless files (common for mainframe downloads):
+            // try content heuristics across all registered processors
+            if (content != null)
+            {
+                foreach (var processor in _processors)
+                {
+                    if (processor.CanProcess(filePath, content))
+                        return processor;
+                }
+            }
             return null;
         }
 

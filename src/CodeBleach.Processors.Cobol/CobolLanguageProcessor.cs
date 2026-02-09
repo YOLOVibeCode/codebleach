@@ -436,7 +436,9 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             return upper.Contains("IDENTIFICATION DIVISION")
                 || upper.Contains("PROCEDURE DIVISION")
                 || upper.Contains("DATA DIVISION")
-                || upper.Contains("WORKING-STORAGE SECTION");
+                || upper.Contains("WORKING-STORAGE SECTION")
+                || Regex.IsMatch(content, @"^\s+\d{2}\s+[\w-]+\s+PIC\s",
+                    RegexOptions.Multiline | RegexOptions.IgnoreCase);
         }
 
         return false;
