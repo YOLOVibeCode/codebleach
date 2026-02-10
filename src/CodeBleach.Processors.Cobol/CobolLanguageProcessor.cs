@@ -396,9 +396,10 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
 
     /// <summary>
     /// Pattern to match COBOL host variables in EXEC SQL blocks: :VARIABLE-NAME
+    /// or qualified form :RECORD-NAME.FIELD-NAME
     /// </summary>
     private static readonly Regex HostVariablePattern =
-        new(@":([A-Za-z][\w-]*)", RegexOptions.Compiled);
+        new(@":([A-Za-z][\w-]*)(?:\.([A-Za-z][\w-]*))?", RegexOptions.Compiled);
 
     /// <summary>
     /// Pattern to match alias names (PREFIX_N format) for deobfuscation.
@@ -425,6 +426,30 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
         return (upper.Contains("PIC ") || upper.Contains("PICTURE "))
             && !upper.Contains("IDENTIFICATION DIVISION")
             && !upper.Contains("PROCEDURE DIVISION");
+    }
+
+    /// <summary>
+    /// Infer semantic category for an unresolved identifier (from COPY member).
+    /// Uses naming conventions common in mainframe COBOL.
+    /// </summary>
+    private static SemanticCategory InferCopybookCategory(string word)
+    {
+        // DB2 DCLGEN copybook record names: DCLS*, DCLGEN*
+        if (word.StartsWith("DCLS", StringComparison.OrdinalIgnoreCase) ||
+            word.StartsWith("DCLGEN", StringComparison.OrdinalIgnoreCase))
+            return SemanticCategory.CobolRecord;
+
+        // File-related identifiers
+        if (word.EndsWith("-FILE", StringComparison.OrdinalIgnoreCase))
+            return SemanticCategory.CobolFile;
+
+        // Record-related identifiers
+        if (word.EndsWith("-RECORD", StringComparison.OrdinalIgnoreCase) ||
+            word.EndsWith("-REC", StringComparison.OrdinalIgnoreCase))
+            return SemanticCategory.CobolRecord;
+
+        // Default: treat as variable (data item from copybook)
+        return SemanticCategory.Variable;
     }
 
     public bool CanProcess(string filePath, string content)
@@ -514,6 +539,34 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                         id.ColumnStart,
                         id.ColumnEnd);
                     aliasMap[normalizedName] = alias;
+                }
+            }
+
+            // Pass 1.5: Discover unresolved identifiers from procedure/data lines.
+            // These are identifiers defined in COPY members (copybooks) that appear
+            // in the code but weren't discovered in Pass 1 because the copybook source
+            // is not available. Any non-keyword identifier used in code must be user-defined.
+            foreach (var line in lines.Where(l =>
+                l.LineType == CobolLineType.ProcedureStatement ||
+                l.LineType == CobolLineType.ExecSqlBlock ||
+                l.LineType == CobolLineType.ExecCicsBlock ||
+                l.LineType == CobolLineType.DataDefinition))
+            {
+                var combined = (line.AreaA + line.AreaB).Trim();
+                foreach (Match m in CobolIdentifierPattern.Matches(combined))
+                {
+                    var word = m.Value.ToUpperInvariant();
+                    if (!aliasMap.ContainsKey(word) &&
+                        !ReservedWords.Contains(word) &&
+                        word != "FILLER" &&
+                        !int.TryParse(word, out _) &&
+                        word.Length > 1)
+                    {
+                        // Infer semantic category from naming patterns
+                        var category = InferCopybookCategory(word);
+                        var alias = context.GetOrCreateAlias(word, category, filePath, line.LineNumber);
+                        aliasMap[word] = alias;
+                    }
                 }
             }
 
@@ -1098,7 +1151,7 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                 return ReplaceParagraphHeader(line, aliasMap);
 
             case CobolLineType.DataDefinition:
-                return ReplaceDataDefinition(line, aliasMap);
+                return ReplaceDataDefinition(line, aliasMap, context, filePath);
 
             case CobolLineType.CopyStatement:
                 return ReplaceCopyStatement(line, aliasMap, context, filePath);
@@ -1256,7 +1309,9 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
     /// </summary>
     private (string NewLine, int Count) ReplaceDataDefinition(
         CobolLine line,
-        Dictionary<string, string> aliasMap)
+        Dictionary<string, string> aliasMap,
+        ObfuscationContext? context = null,
+        string? filePath = null)
     {
         var combined = line.AreaA + line.AreaB;
         int count = 0;
@@ -1291,6 +1346,14 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                     combined = match.Groups[1].Value + match.Groups[2].Value + restOfLine;
                 }
             }
+        }
+
+        // Obfuscate VALUE clause string literals
+        if (context != null)
+        {
+            var (strResult, strCount) = ObfuscateStringLiterals(combined, context, filePath);
+            combined = strResult;
+            count += strCount;
         }
 
         return (RebuildFromCombined(line, combined), count);
@@ -1406,15 +1469,19 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
         var combined = line.AreaA + line.AreaB;
         int count = 0;
 
-        // Replace host variables: :VARIABLE-NAME
+        // Replace host variables: :VARIABLE-NAME or :RECORD.FIELD
         combined = HostVariablePattern.Replace(combined, match =>
         {
             var varName = match.Groups[1].Value.ToUpperInvariant();
+            var recordAlias = varName;
+            var replaced = false;
+
             if (aliasMap.TryGetValue(varName, out var alias))
             {
+                recordAlias = alias;
+                replaced = true;
                 count++;
 
-                // Record cross-language reference
                 context.AddCrossReference(new CrossLanguageReference
                 {
                     Alias = alias,
@@ -1423,10 +1490,23 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                     SourceFile = filePath,
                     Description = $"Host variable :{varName} used in EXEC SQL block"
                 });
-
-                return ":" + alias;
             }
-            return match.Value;
+
+            // Handle qualified field: :RECORD.FIELD
+            if (match.Groups[2].Success)
+            {
+                var fieldName = match.Groups[2].Value.ToUpperInvariant();
+                var fieldAlias = fieldName;
+                if (aliasMap.TryGetValue(fieldName, out var fAlias))
+                {
+                    fieldAlias = fAlias;
+                    replaced = true;
+                    count++;
+                }
+                return replaced ? ":" + recordAlias + "." + fieldAlias : match.Value;
+            }
+
+            return replaced ? ":" + recordAlias : match.Value;
         });
 
         return (RebuildFromCombined(line, combined), count);
@@ -1680,6 +1760,24 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             }
         }
 
+        // Check for IDENTIFICATION DIVISION metadata paragraphs:
+        // INSTALLATION, AUTHOR, DATE-WRITTEN, DATE-COMPILED, SECURITY, REMARKS
+        var idMetaMatch = Regex.Match(combined,
+            @"^(\s*(?:INSTALLATION|AUTHOR|DATE-WRITTEN|DATE-COMPILED|SECURITY|REMARKS)\s*\.\s*)(.+)$",
+            RegexOptions.IgnoreCase);
+        if (idMetaMatch.Success && idMetaMatch.Groups[2].Value.Trim().Length > 0)
+        {
+            var metaContent = idMetaMatch.Groups[2].Value.Trim().TrimEnd('.');
+            if (metaContent.Length >= 2 && metaContent.Any(char.IsLetter))
+            {
+                var alias = context.GetOrCreateAlias(metaContent, SemanticCategory.StringLiteral, filePath);
+                var trailingDot = idMetaMatch.Groups[2].Value.TrimEnd().EndsWith(".", StringComparison.Ordinal) ? "." : "";
+                combined = idMetaMatch.Groups[1].Value + alias + trailingDot;
+                count++;
+                return (RebuildFromCombined(line, combined), count);
+            }
+        }
+
         // Check for FD/SD file description
         var fdMatch = Regex.Match(combined, @"^(\s*(?:FD|SD)\s+)([\w-]+)(.*)$",
             RegexOptions.IgnoreCase);
@@ -1724,7 +1822,11 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
         var (newContent, replCount) = ReplaceIdentifiersInText(combined, aliasMap);
         count += replCount;
 
-        return (RebuildFromCombined(line, newContent), count);
+        // Obfuscate remaining string literal content (company names, etc.)
+        var (strResult, strCount) = ObfuscateStringLiterals(newContent, context, filePath);
+        count += strCount;
+
+        return (RebuildFromCombined(line, strResult), count);
     }
 
     /// <summary>
@@ -1789,6 +1891,55 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             }
 
             return match.Value;
+        });
+
+        return (result, count);
+    }
+
+    /// <summary>
+    /// Pattern matching COBOL string literals: single-quoted strings with 4+ characters.
+    /// </summary>
+    private static readonly Regex CobolStringLiteralPattern =
+        new(@"'([^']{4,})'", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Pattern matching alias names (PREFIX_N) so we don't re-obfuscate already-aliased content.
+    /// </summary>
+    private static readonly Regex AlreadyAliasedPattern =
+        new(@"^[A-Z]+_\d+$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Obfuscate the content of string literals in a line.
+    /// Replaces non-trivial string content (4+ chars, contains letters, not already aliased)
+    /// with STR_N aliases.
+    /// </summary>
+    private static (string Result, int Count) ObfuscateStringLiterals(
+        string text,
+        ObfuscationContext context,
+        string? filePath)
+    {
+        int count = 0;
+        var result = CobolStringLiteralPattern.Replace(text, match =>
+        {
+            var content = match.Groups[1].Value;
+
+            // Skip strings that are all spaces/digits/special chars (no letters)
+            if (!content.Any(char.IsLetter))
+                return match.Value;
+
+            // Skip strings that are already aliased (STR_5, VAR_3, etc.)
+            var trimmedContent = content.Trim();
+            if (AlreadyAliasedPattern.IsMatch(trimmedContent))
+                return match.Value;
+
+            // Skip strings that contain only alias patterns separated by spaces/delimiters
+            var contentWords = trimmedContent.Split(new[] { ' ', ',', '.' }, StringSplitOptions.RemoveEmptyEntries);
+            if (contentWords.All(w => AlreadyAliasedPattern.IsMatch(w) || w.Length <= 1))
+                return match.Value;
+
+            var alias = context.GetOrCreateAlias(content.Trim(), SemanticCategory.StringLiteral, filePath);
+            count++;
+            return "'" + alias + "'";
         });
 
         return (result, count);

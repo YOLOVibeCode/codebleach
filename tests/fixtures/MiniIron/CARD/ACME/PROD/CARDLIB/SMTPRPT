@@ -1,0 +1,23 @@
+HELO mailrelay.acme.internal
+MAIL FROM: batch-reports@acmeins.com
+RCPT TO: ar-team@acmeins.com
+RCPT TO: john.smith@acmeins.com
+RCPT TO: jane.doe@acmeins.com
+DATA
+Subject: ACME Insurance - Daily AR Batch Report
+Date: 2024-01-15
+
+Acme Insurance Company
+Accounts Receivable Daily Processing Summary
+---------------------------------------------
+Batch ID:    ACME-CLM-01
+Region:      Midwest
+Contact:     claims-support@acmeins.com
+
+Records Processed:  12,450
+Errors:                 23
+Total Amount:    $1,234,567.89
+
+Please contact the AR team if you have questions.
+.
+QUIT

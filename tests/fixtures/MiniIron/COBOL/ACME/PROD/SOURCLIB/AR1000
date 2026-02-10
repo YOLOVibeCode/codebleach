@@ -1,0 +1,135 @@
+000100 IDENTIFICATION DIVISION.                                         00000100
+000200 PROGRAM-ID. AR1000.                                              00000200
+000300 INSTALLATION.  ACME INSURANCE COMPANY                            00000300
+000400 AUTHOR. JOHN SMITH.                                              00000400
+000500 DATE-WRITTEN. 2024-01-15.                                        00000500
+000600*--------------------------------------------------------------   00000600
+000700* AR1000 - ACCOUNTS RECEIVABLE BATCH PROCESS                      00000700
+000800*          PROCESSES DAILY AR TRANSACTIONS FOR ACME INS            00000800
+000900*--------------------------------------------------------------   00000900
+001000 ENVIRONMENT DIVISION.                                            00001000
+001100 INPUT-OUTPUT SECTION.                                            00001100
+001200 FILE-CONTROL.                                                    00001200
+001300     SELECT AR-TRANS-FILE ASSIGN TO ARTRANS                       00001300
+001400         ORGANIZATION IS SEQUENTIAL                               00001400
+001500         FILE STATUS IS WS-FILE-STATUS.                           00001500
+001600     SELECT AR-REPORT-FILE ASSIGN TO ARRPT                        00001600
+001700         ORGANIZATION IS SEQUENTIAL                               00001700
+001800         FILE STATUS IS WS-RPT-STATUS.                            00001800
+001900 DATA DIVISION.                                                   00001900
+002000 FILE SECTION.                                                    00002000
+002100 FD  AR-TRANS-FILE                                                00002100
+002200     RECORDING MODE IS F                                          00002200
+002300     RECORD CONTAINS 200 CHARACTERS.                              00002300
+002400 01  AR-TRANS-RECORD.                                             00002400
+002500     05  AR-TRANS-TYPE          PIC X(02).                        00002500
+002600     05  AR-ACCOUNT-NUM         PIC X(12).                        00002600
+002700     05  AR-AMOUNT              PIC S9(9)V99 COMP-3.              00002700
+002800     05  AR-TRANS-DATE          PIC X(08).                        00002800
+002900     05  FILLER                 PIC X(172).                       00002900
+003000 FD  AR-REPORT-FILE                                               00003000
+003100     RECORDING MODE IS F                                          00003100
+003200     RECORD CONTAINS 133 CHARACTERS.                              00003200
+003300 01  AR-REPORT-LINE             PIC X(133).                       00003300
+003400 WORKING-STORAGE SECTION.                                         00003400
+003500 01  WS-FILE-STATUS             PIC X(02).                        00003500
+003600 01  WS-RPT-STATUS              PIC X(02).                        00003600
+003700 01  WS-COMPANY-ID              PIC X(08) VALUE 'ACMEINS '.       00003700
+003800 01  WS-COMPANY-NAME            PIC X(30) VALUE                   00003800
+003900     'ACME INSURANCE CO'.                                         00003900
+004000 01  WS-REGION-CODE             PIC X(04) VALUE 'MWST'.          00004000
+004100 01  WS-DB-STATUS               PIC X(02).                        00004100
+004200 01  WS-SQLCODE                 PIC S9(09) COMP.                  00004200
+004300 01  WS-RECORD-COUNT            PIC 9(07) VALUE ZEROS.            00004300
+004400 01  WS-ERROR-COUNT             PIC 9(05) VALUE ZEROS.            00004400
+004500 01  WS-TOTAL-AMOUNT            PIC S9(11)V99 COMP-3.             00004500
+004600 01  WS-PROCESS-DATE            PIC X(08).                        00004600
+004700 01  WS-ABEND-AREA.                                               00004700
+004800     05  WS-ABEND-PGM           PIC X(08) VALUE 'AR1000  '.       00004800
+004900     05  WS-ABEND-PARA          PIC X(30).                        00004900
+005000     05  WS-ABEND-MSG           PIC X(80).                        00005000
+005100*                                                                 00005100
+005200     COPY DCLSACCT.                                               00005200
+005300     COPY DCLSPROV.                                               00005300
+005400*                                                                 00005400
+005500 01  WS-PROVIDER-WORK.                                            00005500
+005600     05  WS-PROV-NPI            PIC X(10).                        00005600
+005700     05  WS-PROV-TAX-ID         PIC X(09).                        00005700
+005800 PROCEDURE DIVISION.                                              00005800
+005900 0000-MAIN-CONTROL.                                               00005900
+006000     PERFORM 1000-INITIALIZE                                      00006000
+006100     PERFORM 2000-PROCESS-RECORDS                                 00006100
+006200         UNTIL WS-FILE-STATUS NOT = '00'                          00006200
+006300     PERFORM 3000-WRAP-UP                                         00006300
+006400     STOP RUN.                                                    00006400
+006500 1000-INITIALIZE.                                                 00006500
+006600     OPEN INPUT AR-TRANS-FILE                                     00006600
+006700     OPEN OUTPUT AR-REPORT-FILE                                   00006700
+006800     MOVE 'ACME AR BATCH'        TO WS-ABEND-MSG                 00006800
+006900     DISPLAY 'AR1000 - ACME INSURANCE AR PROCESSING STARTED'      00006900
+007000     PERFORM 1100-READ-TRANS.                                     00007000
+007100 1100-READ-TRANS.                                                 00007100
+007200     READ AR-TRANS-FILE                                           00007200
+007300         AT END MOVE '10' TO WS-FILE-STATUS.                      00007300
+007400 2000-PROCESS-RECORDS.                                            00007400
+007500     EVALUATE AR-TRANS-TYPE                                       00007500
+007600         WHEN '01'                                                00007600
+007700             PERFORM 2100-PROCESS-PAYMENT                         00007700
+007800         WHEN '02'                                                00007800
+007900             PERFORM 2200-PROCESS-ADJUSTMENT                      00007900
+008000         WHEN OTHER                                               00008000
+008100             ADD 1 TO WS-ERROR-COUNT                              00008100
+008200     END-EVALUATE                                                 00008200
+008300     ADD 1 TO WS-RECORD-COUNT                                     00008300
+008400     PERFORM 1100-READ-TRANS.                                     00008400
+008500 2100-PROCESS-PAYMENT.                                            00008500
+008600     MOVE AR-ACCOUNT-NUM TO ACCT-CNTL-ID OF DCLSACCT-REC         00008600
+008700     PERFORM 2110-FETCH-ACCOUNT                                   00008700
+008800     IF WS-SQLCODE = ZEROS                                        00008800
+008900         ADD AR-AMOUNT TO ACCT-BALANCE OF DCLSACCT-REC            00008900
+009000         PERFORM 2120-UPDATE-ACCOUNT                              00009000
+009100     ELSE                                                         00009100
+009200         DISPLAY '2100 - ACCOUNT NOT FOUND: ' AR-ACCOUNT-NUM      00009200
+009300         ADD 1 TO WS-ERROR-COUNT                                  00009300
+009400     END-IF.                                                      00009400
+009500 2110-FETCH-ACCOUNT.                                              00009500
+009600     MOVE '2110-FETCH-ACCOUNT' TO WS-ABEND-PARA                   00009600
+009700     EXEC SQL                                                     00009700
+009800         SELECT ACCT_CNTL_ID, ACCT_BALANCE, ACCT_STATUS_CD        00009800
+009900             INTO :DCLSACCT-REC.ACCT-CNTL-ID,                     00009900
+010000                  :DCLSACCT-REC.ACCT-BALANCE,                     00010000
+010100                  :DCLSACCT-REC.ACCT-STATUS-CD                    00010100
+010200             FROM S05201SA                                        00010200
+010300             WHERE ACCT_CNTL_ID = :AR-ACCOUNT-NUM                 00010300
+010400     END-EXEC                                                     00010400
+010500     MOVE SQLCODE TO WS-SQLCODE.                                  00010500
+010600 2120-UPDATE-ACCOUNT.                                             00010600
+010700     MOVE '2120-UPDATE-ACCOUNT' TO WS-ABEND-PARA                  00010700
+010800     EXEC SQL                                                     00010800
+010900         UPDATE S05201SA                                          00010900
+011000             SET ACCT_BALANCE = :DCLSACCT-REC.ACCT-BALANCE        00011000
+011100             WHERE ACCT_CNTL_ID = :DCLSACCT-REC.ACCT-CNTL-ID     00011100
+011200     END-EXEC                                                     00011200
+011300     IF SQLCODE NOT = ZEROS                                       00011300
+011400         DISPLAY '2120 - UPDATE FAILED FOR: '                     00011400
+011500             ACCT-CNTL-ID OF DCLSACCT-REC                         00011500
+011600     END-IF.                                                      00011600
+011700 2200-PROCESS-ADJUSTMENT.                                         00011700
+011800     MOVE AR-ACCOUNT-NUM TO PROV-NPI-ID OF DCLSPROV-REC           00011800
+011900     EXEC SQL                                                     00011900
+012000         SELECT PROV_NPI_ID, PROV_TAX_ID, PROV_NAME              00012000
+012100             INTO :DCLSPROV-REC.PROV-NPI-ID,                      00012100
+012200                  :DCLSPROV-REC.PROV-TAX-ID,                      00012200
+012300                  :DCLSPROV-REC.PROV-NAME                         00012300
+012400             FROM S08401SA                                        00012400
+012500             WHERE PROV_NPI_ID = :WS-PROV-NPI                     00012500
+012600     END-EXEC                                                     00012600
+012700     IF SQLCODE = ZEROS                                           00012700
+012800         DISPLAY 'PROVIDER FOUND: ' PROV-NAME OF DCLSPROV-REC     00012800
+012900     END-IF.                                                      00012900
+013000 3000-WRAP-UP.                                                    00013000
+013100     DISPLAY 'AR1000 - RECORDS PROCESSED: ' WS-RECORD-COUNT       00013100
+013200     DISPLAY 'AR1000 - ERRORS: ' WS-ERROR-COUNT                   00013200
+013300     CLOSE AR-TRANS-FILE AR-REPORT-FILE                           00013300
+013400     CALL 'AR1000RP'                                              00013400
+013500     STOP RUN.                                                    00013500

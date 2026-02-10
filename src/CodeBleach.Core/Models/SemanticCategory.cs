@@ -83,6 +83,16 @@ public enum SemanticCategory
     Directory,
     ProjectFile,
 
+    // ── Mainframe Utility (CARD files) ──────────────────────────────
+    Email,
+    MvsDataset,
+    VolumeSerial,
+    ScreenLabel,
+    MfsMap,
+    Db2System,
+    FtpCredential,
+    UnixPath,
+
     // ── Shared / Cross-language ────────────────────────────────────
     StringLiteral,
     Comment,

@@ -12,6 +12,7 @@ using CodeBleach.Processors.Jcl;
 using CodeBleach.Processors.OracleSql;
 using CodeBleach.Processors.Sql;
 using CodeBleach.Processors.VbScript;
+using CodeBleach.Processors.MainframeUtility;
 using CodeBleach.Processors.VisualBasic;
 
 namespace CodeBleach.Commands;
@@ -81,6 +82,7 @@ public static class SanitizeCommand
         registry.Register(new VbScriptLanguageProcessor());
         registry.Register(new OracleSqlLanguageProcessor());
         registry.Register(new FSharpLanguageProcessor());
+        registry.Register(new MainframeUtilityLanguageProcessor());
         return registry;
     }
 
@@ -322,6 +324,47 @@ public static class SanitizeCommand
             if (verbose && patchedFiles > 0)
             {
                 Console.WriteLine($"  Files patched:      {patchedFiles}");
+            }
+
+            // Phase 3.5: Sanitize directory listing files (e.g., DIRECTORY_STRUCTURE.txt)
+            // These contain original file/folder names that must be replaced with aliases.
+            var txtFiles = Directory.EnumerateFiles(outputPath, "*.txt", SearchOption.AllDirectories)
+                .Where(f => !fileProcessor.ShouldIgnore(f))
+                .ToList();
+            foreach (var txtFile in txtFiles)
+            {
+                var txtContent = await File.ReadAllTextAsync(txtFile);
+                if (txtContent.Contains("Folder PATH listing") || txtContent.Contains("+---") || txtContent.Contains("\\---"))
+                {
+                    var patched = txtContent;
+                    // Apply file path mappings (original name → alias name)
+                    foreach (var (original, mapped) in mappings.FilePathForward.OrderByDescending(p => p.Key.Length))
+                    {
+                        var origName = Path.GetFileName(original);
+                        var mappedName = Path.GetFileName(mapped);
+                        if (!string.IsNullOrEmpty(origName) && origName != mappedName)
+                        {
+                            patched = patched.Replace(origName, mappedName, StringComparison.OrdinalIgnoreCase);
+                        }
+                    }
+                    // Also replace directory names
+                    foreach (var (original, mapped) in mappings.FilePathForward.OrderByDescending(p => p.Key.Length))
+                    {
+                        var parts = original.Replace('\\', '/').Split('/');
+                        var mappedParts = mapped.Replace('\\', '/').Split('/');
+                        for (int idx = 0; idx < parts.Length && idx < mappedParts.Length; idx++)
+                        {
+                            if (parts[idx] != mappedParts[idx] && !string.IsNullOrEmpty(parts[idx]))
+                            {
+                                patched = patched.Replace(parts[idx], mappedParts[idx], StringComparison.OrdinalIgnoreCase);
+                            }
+                        }
+                    }
+                    if (patched != txtContent)
+                    {
+                        await File.WriteAllTextAsync(txtFile, patched);
+                    }
+                }
             }
 
             // Phase 4: Rename files and directories on disk

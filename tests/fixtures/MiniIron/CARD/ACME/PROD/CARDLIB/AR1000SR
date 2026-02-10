@@ -1,0 +1,6 @@
+ SUM FIELDS=NONE,XSUM
+ SORT FIELDS=(1,12,CH,A,               ACCOUNT CONTROL ID
+              13,8,CH,A,               ACME TRANSACTION DATE
+              21,10,CH,A,              PROVIDER NPI NUMBER
+              31,15,CH,A,              CLAIM CONTROL ID
+              46,6,PD,D)               PAYMENT AMOUNT

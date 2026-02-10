@@ -1,0 +1,10 @@
+mfpxsrv010.acme.internal
+P@ssw0rd!
+cd /AcmeHealth/Claims/Inbound
+ascii
+put 'ACME.PROD.CLAIMS.EXTRACT'
+cd /AcmeHealth/Claims/Archive
+get clm_archive_20240115.dat
+binary
+put 'ACME.PROD.CLAIMS.BINARY'
+quit

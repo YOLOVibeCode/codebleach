@@ -1,0 +1,30 @@
+Folder PATH listing
+Volume serial number is ACME-0001
+C:\MINIRON
+├───CARD
+│   └───ACME
+│       └───PROD
+│           └───CARDLIB
+│               ├───AR1000BD
+│               ├───AR1000SR
+│               ├───DEFACCT
+│               ├───DLIAR01
+│               ├───FTPCLM
+│               ├───MFSAR01
+│               ├───PARMDB2
+│               └───SMTPRPT
+├───COBOL
+│   └───ACME
+│       └───PROD
+│           └───SOURCLIB
+│               ├───AR1000
+│               ├───AR2000
+│               └───AR9910
+├───JCL
+│   └───ACME
+│       └───PROD
+│           └───JCLLIB
+│               ├───AR1000B
+│               ├───AR1000F
+│               └───AR1000J
+└───DIRECTORY_STRUCTURE.txt

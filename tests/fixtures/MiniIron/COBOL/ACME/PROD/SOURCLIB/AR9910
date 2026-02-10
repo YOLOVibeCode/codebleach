@@ -1,0 +1,26 @@
+000100*--------------------------------------------------------------   00000100
+000200* AR9910 - ACME INSURANCE COMMON COPYBOOK                         00000200
+000300*          SHARED DATA DEFINITIONS FOR AR SYSTEM                  00000300
+000400*--------------------------------------------------------------   00000400
+000500 01  DCLSACCT-REC.                                                00000500
+000600     05  ACCT-CNTL-ID           PIC X(12).                        00000600
+000700     05  ACCT-BALANCE           PIC S9(11)V99 COMP-3.             00000700
+000800     05  ACCT-STATUS-CD         PIC X(02).                        00000800
+000900     05  ACCT-OPEN-DT           PIC X(08).                        00000900
+001000     05  ACCT-TYPE-CD           PIC X(03).                        00001000
+001100 01  DCLSPROV-REC.                                                00001100
+001200     05  PROV-NPI-ID            PIC X(10).                        00001200
+001300     05  PROV-TAX-ID            PIC X(09).                        00001300
+001400     05  PROV-NAME              PIC X(30).                        00001400
+001500     05  PROV-ADDR-LINE1        PIC X(40).                        00001500
+001600     05  PROV-CITY              PIC X(20).                        00001600
+001700     05  PROV-STATE-CD          PIC X(02).                        00001700
+001800 01  DCLSCLM-REC.                                                 00001800
+001900     05  CLM-CNTL-ID            PIC X(15).                        00001900
+002000     05  CLM-CNTL-SFX-ID        PIC X(03).                        00002000
+002100     05  CLM-PMT-ID             PIC X(08).                        00002100
+002200     05  CLM-STAT-CD            PIC X(02).                        00002200
+002300     05  CLM-PROV-NPI           PIC X(10).                        00002300
+002400     05  CLM-ACCT-ID            PIC X(12).                        00002400
+002500     05  CLM-BLUE-CRD-ID        PIC X(12).                        00002500
+002600     05  CLM-DNL-RSN-CD         PIC X(04).                        00002600

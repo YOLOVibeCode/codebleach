@@ -85,6 +85,16 @@ public sealed class NamingStrategy
         [SemanticCategory.Directory] = "DIR",
         [SemanticCategory.ProjectFile] = "PROJ",
 
+        // Mainframe Utility (CARD files)
+        [SemanticCategory.Email] = "EMAIL",
+        [SemanticCategory.MvsDataset] = "DSN",
+        [SemanticCategory.VolumeSerial] = "VOL",
+        [SemanticCategory.ScreenLabel] = "LABEL",
+        [SemanticCategory.MfsMap] = "MFSMAP",
+        [SemanticCategory.Db2System] = "SYS",
+        [SemanticCategory.FtpCredential] = "CRED",
+        [SemanticCategory.UnixPath] = "UPATH",
+
         // Shared
         [SemanticCategory.StringLiteral] = "STR",
         [SemanticCategory.Comment] = "CMT",

@@ -19,7 +19,10 @@ public static class BuiltInRules
         ConnectionStrings,
         WindowsPaths,
         UncPaths,
-        InternalHostnames
+        InternalHostnames,
+        EmailAddresses,
+        MvsDatasetQuoted,
+        MvsDatasetBare
     };
     
     public static SanitizationRule ServerNames => new()
@@ -141,6 +144,39 @@ public static class BuiltInRules
         Prefix = "HOST",
         Severity = RuleSeverity.Medium,
         Order = 50
+    };
+
+    public static SanitizationRule EmailAddresses => new()
+    {
+        RuleId = "email_addresses",
+        Name = "Email Addresses",
+        Description = "Detects email addresses",
+        Pattern = @"[\w.+-]+@[\w.-]+\.\w{2,}",
+        Prefix = "EMAIL",
+        Severity = RuleSeverity.High,
+        Order = 55
+    };
+
+    public static SanitizationRule MvsDatasetQuoted => new()
+    {
+        RuleId = "mvs_dataset_quoted",
+        Name = "MVS Dataset Names (Quoted)",
+        Description = "Detects quoted MVS dataset names like 'USER.CM30.PRODLIB'",
+        Pattern = @"'[A-Z][A-Z0-9]{0,7}(\.[A-Z0-9@#$]{1,8})+(\([^)]+\))?'",
+        Prefix = "DSN",
+        Severity = RuleSeverity.High,
+        Order = 56
+    };
+
+    public static SanitizationRule MvsDatasetBare => new()
+    {
+        RuleId = "mvs_dataset_bare",
+        Name = "MVS Dataset Names (Bare)",
+        Description = "Detects unquoted MVS dataset names like DBZANR.TA08460",
+        Pattern = @"\b[A-Z]{2,8}\.[A-Z][A-Z0-9]{1,7}(\.[A-Z0-9]{1,8}){0,5}\b",
+        Prefix = "DSN",
+        Severity = RuleSeverity.Medium,
+        Order = 57
     };
 }
 

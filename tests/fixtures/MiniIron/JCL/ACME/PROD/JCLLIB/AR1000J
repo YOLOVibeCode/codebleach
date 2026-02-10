@@ -1,0 +1,59 @@
+//AR1000J  JOB (ACME,AR01),'ACME AR BATCH',
+//         CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//         NOTIFY=&SYSUID,REGION=0M
+//*--------------------------------------------------------------
+//* AR1000J - ACME INSURANCE DAILY AR BATCH PROCESS
+//*           RUNS AR1000 COBOL PROGRAM WITH DB2
+//*--------------------------------------------------------------
+//*
+//JOBLIB   DD  DSN=ACME.PROD.LOADLIB,DISP=SHR
+//         DD  DSN=ACME.PROD.DB2.RUNLIB,DISP=SHR
+//*
+//*--------------------------------------------------------------
+//* STEP010 - IDCAMS DELETE/DEFINE WORK DATASET
+//*--------------------------------------------------------------
+//STEP010  EXEC PGM=IDCAMS
+//SYSPRINT DD  SYSOUT=*
+//SYSIN    DD  DSN=ACME.PROD.CARDLIB(DEFACCT),DISP=SHR
+//*
+//*--------------------------------------------------------------
+//* STEP020 - DFSORT INCOMING TRANSACTIONS
+//*--------------------------------------------------------------
+//STEP020  EXEC PGM=SORT
+//SYSOUT   DD  SYSOUT=*
+//SORTIN   DD  DSN=ACME.PROD.AR.DAILY.INPUT,DISP=SHR
+//SORTOUT  DD  DSN=ACME.PROD.AR.DAILY.SORTED,
+//             DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(50,10),RLSE),
+//             DCB=(RECFM=FB,LRECL=200,BLKSIZE=0)
+//SYSIN    DD  DSN=ACME.PROD.CARDLIB(AR1000SR),DISP=SHR
+//*
+//*--------------------------------------------------------------
+//* STEP030 - RUN AR1000 COBOL/DB2 BATCH PROGRAM
+//*--------------------------------------------------------------
+//STEP030  EXEC PGM=IKJEFT01,DYNAMNBR=20,COND=(0,NE)
+//STEPLIB  DD  DSN=ACME.PROD.LOADLIB,DISP=SHR
+//         DD  DSN=DB2P.SDSNLOAD,DISP=SHR
+//SYSTSPRT DD  SYSOUT=*
+//SYSTSIN  DD  *
+  DSN SYSTEM(DB2P)
+  RUN PROGRAM(AR1000) -
+      PLAN(ARPLAN01) -
+      LIBRARY('ACME.PROD.LOADLIB')
+  END
+/*
+//ARTRANS  DD  DSN=ACME.PROD.AR.DAILY.SORTED,DISP=SHR
+//ARRPT    DD  DSN=ACME.PROD.AR.REPORT.DAILY,
+//             DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(10,5),RLSE),
+//             DCB=(RECFM=FBA,LRECL=133,BLKSIZE=0)
+//SYSUDUMP DD  SYSOUT=*
+//*
+//*--------------------------------------------------------------
+//* STEP040 - SEND COMPLETION NOTIFICATION
+//*--------------------------------------------------------------
+//STEP040  EXEC PGM=IEBGENER,COND=(0,NE)
+//SYSUT1   DD  DSN=ACME.PROD.CARDLIB(SMTPRPT),DISP=SHR
+//SYSUT2   DD  SYSOUT=(B,SMTP)
+//SYSPRINT DD  SYSOUT=*
+//SYSIN    DD  DUMMY

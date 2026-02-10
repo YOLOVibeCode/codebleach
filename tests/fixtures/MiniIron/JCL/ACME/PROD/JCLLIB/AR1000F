@@ -1,0 +1,29 @@
+//AR1000F  JOB (ACME,AR01),'ACME FTP XFER',
+//         CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//         NOTIFY=&SYSUID
+//*--------------------------------------------------------------
+//* AR1000F - FTP CLAIMS DATA TO ACME HEALTH ANALYTICS SERVER
+//*           TRANSFERS DAILY EXTRACT TO UNIX SIDE
+//*--------------------------------------------------------------
+//*
+//*--------------------------------------------------------------
+//* STEP010 - FTP TRANSFER
+//*--------------------------------------------------------------
+//STEP010  EXEC PGM=FTP,PARM='(EXIT'
+//SYSPRINT DD  SYSOUT=*
+//OUTPUT   DD  SYSOUT=*
+//INPUT    DD  DSN=ACME.PROD.CARDLIB(FTPCLM),DISP=SHR
+//*
+//*--------------------------------------------------------------
+//* STEP020 - VERIFY TRANSFER AND ARCHIVE
+//*--------------------------------------------------------------
+//STEP020  EXEC PGM=IDCAMS,COND=(0,NE)
+//SYSPRINT DD  SYSOUT=*
+//INDD     DD  DSN=ACME.PROD.CLAIMS.EXTRACT,DISP=SHR
+//OUTDD    DD  DSN=ACME.PROD.CLAIMS.ARCHIVE(&DATE),
+//             DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(100,20),RLSE)
+//SYSIN    DD  *
+ REPRO  INFILE(INDD) -
+        OUTFILE(OUTDD)
+/*

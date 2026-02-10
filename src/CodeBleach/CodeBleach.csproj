@@ -39,5 +39,6 @@
     <ProjectReference Include="..\CodeBleach.Processors.VbScript\CodeBleach.Processors.VbScript.csproj" />
     <ProjectReference Include="..\CodeBleach.Processors.OracleSql\CodeBleach.Processors.OracleSql.csproj" />
     <ProjectReference Include="..\CodeBleach.Processors.FSharp\CodeBleach.Processors.FSharp.fsproj" />
+    <ProjectReference Include="..\CodeBleach.Processors.MainframeUtility\CodeBleach.Processors.MainframeUtility.csproj" />
   </ItemGroup>
 </Project>

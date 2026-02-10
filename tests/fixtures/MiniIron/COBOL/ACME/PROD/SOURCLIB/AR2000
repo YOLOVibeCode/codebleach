@@ -1,0 +1,81 @@
+000100 IDENTIFICATION DIVISION.                                         00000100
+000200 PROGRAM-ID. AR2000.                                              00000200
+000300 INSTALLATION.  ACME INSURANCE COMPANY                            00000300
+000400 AUTHOR. JANE DOE.                                                00000400
+000500*--------------------------------------------------------------   00000500
+000600* AR2000 - CLAIMS PROCESSING SUBROUTINE                           00000600
+000700*          CALLED BY AR1000 FOR CLAIM ADJUDICATION                00000700
+000800*--------------------------------------------------------------   00000800
+000900 ENVIRONMENT DIVISION.                                            00000900
+001000 DATA DIVISION.                                                   00001000
+001100 WORKING-STORAGE SECTION.                                         00001100
+001200 01  WS-SQLCODE                 PIC S9(09) COMP.                  00001200
+001300 01  WS-CLAIM-STATUS            PIC X(02).                        00001300
+001400 01  WS-ACME-REGION             PIC X(08) VALUE 'ACMEMWST'.       00001400
+001500 01  WS-BATCH-ID                PIC X(12) VALUE 'ACME-CLM-01'.    00001500
+001600 01  WS-ERROR-MSG               PIC X(80).                        00001600
+001700*                                                                 00001700
+001800     COPY DCLSACCT.                                               00001800
+001900     COPY DCLSPROV.                                               00001900
+002000     COPY DCLSCLM.                                                00002000
+002100*                                                                 00002100
+002200 LINKAGE SECTION.                                                 00002200
+002300 01  LS-CLAIM-KEY               PIC X(15).                        00002300
+002400 01  LS-RETURN-CODE             PIC 9(04).                        00002400
+002500 PROCEDURE DIVISION USING LS-CLAIM-KEY LS-RETURN-CODE.            00002500
+002600 0000-MAIN-ENTRY.                                                 00002600
+002700     MOVE ZEROS TO LS-RETURN-CODE                                 00002700
+002800     PERFORM 1000-FETCH-CLAIM                                     00002800
+002900     PERFORM 2000-ADJUDICATE                                      00002900
+003000     GOBACK.                                                      00003000
+003100 1000-FETCH-CLAIM.                                                00003100
+003200     MOVE LS-CLAIM-KEY TO CLM-CNTL-ID OF DCLSCLM-REC             00003200
+003300     EXEC SQL                                                     00003300
+003400         SELECT CLM_CNTL_ID, CLM_CNTL_SFX_ID,                    00003400
+003500                CLM_PMT_ID, CLM_STAT_CD,                          00003500
+003600                CLM_PROV_NPI, CLM_ACCT_ID                         00003600
+003700             INTO :DCLSCLM-REC.CLM-CNTL-ID,                       00003700
+003800                  :DCLSCLM-REC.CLM-CNTL-SFX-ID,                   00003800
+003900                  :DCLSCLM-REC.CLM-PMT-ID,                        00003900
+004000                  :DCLSCLM-REC.CLM-STAT-CD,                       00004000
+004100                  :DCLSCLM-REC.CLM-PROV-NPI,                      00004100
+004200                  :DCLSCLM-REC.CLM-ACCT-ID                        00004200
+004300             FROM S08708SA                                        00004300
+004400             WHERE CLM_CNTL_ID = :LS-CLAIM-KEY                    00004400
+004500     END-EXEC                                                     00004500
+004600     MOVE SQLCODE TO WS-SQLCODE                                   00004600
+004700     IF WS-SQLCODE NOT = ZEROS                                    00004700
+004800         MOVE '1000-FETCH-CLAIM FAILED'  TO WS-ERROR-MSG          00004800
+004900         MOVE 9999 TO LS-RETURN-CODE                              00004900
+005000     END-IF.                                                      00005000
+005100 2000-ADJUDICATE.                                                 00005100
+005200     IF WS-SQLCODE NOT = ZEROS                                    00005200
+005300         GOBACK                                                   00005300
+005400     END-IF                                                       00005400
+005500     EVALUATE CLM-STAT-CD OF DCLSCLM-REC                         00005500
+005600         WHEN 'OP'                                                00005600
+005700             PERFORM 2100-PROCESS-OPEN-CLAIM                      00005700
+005800         WHEN 'PN'                                                00005800
+005900             PERFORM 2200-PROCESS-PENDING                         00005900
+006000         WHEN OTHER                                               00006000
+006100             DISPLAY 'AR2000 - INVALID STATUS: '                  00006100
+006200                 CLM-STAT-CD OF DCLSCLM-REC                       00006200
+006300     END-EVALUATE.                                                00006300
+006400 2100-PROCESS-OPEN-CLAIM.                                         00006400
+006500     MOVE ACCT-CNTL-ID OF DCLSACCT-REC                           00006500
+006600         TO CLM-ACCT-ID OF DCLSCLM-REC                           00006600
+006700     EXEC SQL                                                     00006700
+006800         UPDATE S08708SA                                          00006800
+006900             SET CLM_STAT_CD = 'PD',                              00006900
+007000                 CLM_PMT_ID = :DCLSCLM-REC.CLM-PMT-ID            00007000
+007100             WHERE CLM_CNTL_ID = :DCLSCLM-REC.CLM-CNTL-ID        00007100
+007200               AND CLM_CNTL_SFX_ID = :DCLSCLM-REC.CLM-CNTL-SFX-ID
+007300     END-EXEC                                                     00007300
+007400     IF SQLCODE = ZEROS                                           00007400
+007500         DISPLAY 'CLAIM PAID: ' CLM-CNTL-ID OF DCLSCLM-REC       00007500
+007600     ELSE                                                         00007600
+007700         DISPLAY 'ACME CLM UPDATE FAILED'                         00007700
+007800         MOVE 8888 TO LS-RETURN-CODE                              00007800
+007900     END-IF.                                                      00007900
+008000 2200-PROCESS-PENDING.                                            00008000
+008100     DISPLAY 'AR2000 - PENDING CLAIM: ' LS-CLAIM-KEY.             00008100

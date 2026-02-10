@@ -1,0 +1,17 @@
+//AR1000B  JOB (ACME,AR01),'ACME DB2 BIND',
+//         CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//         NOTIFY=&SYSUID
+//*--------------------------------------------------------------
+//* AR1000B - DB2 BIND JOB FOR AR1000/AR2000
+//*           BINDS COBOL/DB2 PACKAGES FOR AR SYSTEM
+//*--------------------------------------------------------------
+//*
+//JOBLIB   DD  DSN=DB2P.SDSNLOAD,DISP=SHR
+//*
+//*--------------------------------------------------------------
+//* STEP010 - BIND AR PACKAGES
+//*--------------------------------------------------------------
+//STEP010  EXEC PGM=IKJEFT01,DYNAMNBR=20
+//DBRMLIB  DD  DSN=ACME.PROD.DBRMLIB,DISP=SHR
+//SYSTSPRT DD  SYSOUT=*
+//SYSTSIN  DD  DSN=ACME.PROD.CARDLIB(AR1000BD),DISP=SHR
