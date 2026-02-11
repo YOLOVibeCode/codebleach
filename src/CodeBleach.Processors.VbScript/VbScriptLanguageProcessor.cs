@@ -343,7 +343,7 @@ public sealed class VbScriptLanguageProcessor : ILanguageProcessor
 
     public LanguageProcessingResult Obfuscate(string content, ObfuscationContext context, string? filePath = null)
     {
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(content) || context.Scope.IsDelegationOnly(ProcessorId))
         {
             return new LanguageProcessingResult
             {

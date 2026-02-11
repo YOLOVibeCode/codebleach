@@ -31,6 +31,9 @@ public record Manifest
 
     /// <summary>File path mappings for Level 2 file-name obfuscation (original → obfuscated relative paths).</summary>
     public Dictionary<string, string>? FilePathMappings { get; init; }
+
+    /// <summary>Scope specifiers used for this run (null = everything in scope).</summary>
+    public IReadOnlyList<string>? ScopeSpecifiers { get; init; }
 }
 
 /// <summary>

@@ -59,6 +59,8 @@ public sealed class FileNameMapper
     /// <summary>
     /// Builds file path mappings for all files in the output directory.
     /// Populates context.Mappings.FilePathForward and FilePathReverse.
+    /// When scope filtering is active, files whose primary processor is delegation-only
+    /// are not renamed (their identifiers aren't obfuscated so the file name doesn't leak).
     /// </summary>
     /// <param name="context">The obfuscation context with populated MappingTable and SourceMap.</param>
     /// <param name="allRelativeFiles">All files in the output directory, as relative paths (forward-slash normalized).</param>
@@ -68,12 +70,24 @@ public sealed class FileNameMapper
         var usedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Phase 1: Collect all unique directory segment names and assign DIR_N aliases
-        BuildDirectoryAliases(allRelativeFiles);
+        // When scope is filtered, only consider directories that contain in-scope files
+        var filesToRename = context.Scope.IsFiltered
+            ? allRelativeFiles.Where(f => IsFileInScope(f, context)).ToList()
+            : allRelativeFiles as IReadOnlyList<string>;
+
+        BuildDirectoryAliases(filesToRename);
 
         // Phase 2: Map each file
         foreach (var file in allRelativeFiles)
         {
             var normalized = file.Replace('\\', '/');
+
+            // When scope is filtered, skip renaming for delegation-only files
+            if (context.Scope.IsFiltered && !IsFileInScope(normalized, context))
+            {
+                continue;
+            }
+
             var extension = Path.GetExtension(normalized);
             var stem = Path.GetFileNameWithoutExtension(normalized);
             var dir = Path.GetDirectoryName(normalized)?.Replace('\\', '/') ?? "";
@@ -203,5 +217,20 @@ public sealed class FileNameMapper
     {
         return path1.Equals(path2, StringComparison.OrdinalIgnoreCase) ||
                path1.EndsWith($"/{path2}", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Checks if a file's primary processor is in scope (not delegation-only).
+    /// Uses the processor registry to determine which processor handles this file.
+    /// </summary>
+    private static bool IsFileInScope(string relativePath, ObfuscationContext context)
+    {
+        var registry = context.ProcessorRegistry;
+        if (registry == null) return true;
+
+        var processor = registry.GetProcessor(relativePath);
+        if (processor == null) return !context.Scope.IsFiltered;
+
+        return context.Scope.IsInScope(processor.ProcessorId);
     }
 }

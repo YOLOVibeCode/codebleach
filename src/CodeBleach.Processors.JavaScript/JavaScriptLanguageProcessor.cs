@@ -120,24 +120,30 @@ public sealed class JavaScriptLanguageProcessor : ILanguageProcessor
         try
         {
             var ast = ParseJavaScript(content);
-            var discoveryVisitor = new DeclarationDiscoveryVisitor();
-            discoveryVisitor.Visit(ast);
-
-            var declaredNames = discoveryVisitor.DeclaredNames;
+            var delegationOnly = context.Scope.IsDelegationOnly(ProcessorId);
             var replacements = new List<IdentifierReplacement>();
             var warnings = new List<string>();
 
-            // Collect identifier replacements
-            var identifierCollector = new IdentifierCollector(declaredNames, context, filePath, content);
-            identifierCollector.Visit(ast);
-            replacements.AddRange(identifierCollector.Replacements);
-            warnings.AddRange(identifierCollector.Warnings);
+            if (!delegationOnly)
+            {
+                // Full mode: discover declarations and collect identifier replacements
+                var discoveryVisitor = new DeclarationDiscoveryVisitor();
+                discoveryVisitor.Visit(ast);
 
-            // Collect comment replacements
-            CollectCommentReplacements(content, context, filePath, replacements);
+                var declaredNames = discoveryVisitor.DeclaredNames;
+
+                var identifierCollector = new IdentifierCollector(declaredNames, context, filePath, content);
+                identifierCollector.Visit(ast);
+                replacements.AddRange(identifierCollector.Replacements);
+                warnings.AddRange(identifierCollector.Warnings);
+
+                // Collect comment replacements
+                CollectCommentReplacements(content, context, filePath, replacements);
+            }
 
             // Collect string literal replacements
-            var literalCollector = new StringLiteralCollector(context, filePath, content);
+            // In delegation-only mode, only SQL-in-strings are processed.
+            var literalCollector = new StringLiteralCollector(context, filePath, content, delegationOnly);
             literalCollector.Visit(ast);
             replacements.AddRange(literalCollector.Replacements);
 
@@ -1186,6 +1192,7 @@ public sealed class JavaScriptLanguageProcessor : ILanguageProcessor
         private readonly ObfuscationContext _context;
         private readonly string? _filePath;
         private readonly string _source;
+        private readonly bool _delegationOnly;
 
         public List<IdentifierReplacement> Replacements { get; } = [];
 
@@ -1196,11 +1203,12 @@ public sealed class JavaScriptLanguageProcessor : ILanguageProcessor
         /// </summary>
         public int SqlReplacementCount { get; private set; }
 
-        public StringLiteralCollector(ObfuscationContext context, string? filePath, string source)
+        public StringLiteralCollector(ObfuscationContext context, string? filePath, string source, bool delegationOnly = false)
         {
             _context = context;
             _filePath = filePath;
             _source = source;
+            _delegationOnly = delegationOnly;
         }
 
         protected override object? VisitImportDeclaration(ImportDeclaration node)
@@ -1294,6 +1302,12 @@ public sealed class JavaScriptLanguageProcessor : ILanguageProcessor
                         return base.VisitLiteral(node);
                     }
                 }
+            }
+
+            // In delegation-only mode, skip non-SQL string literal obfuscation
+            if (_delegationOnly)
+            {
+                return base.VisitLiteral(node);
             }
 
             var lineNumber = GetLineNumber(_source, node.Range.Start);

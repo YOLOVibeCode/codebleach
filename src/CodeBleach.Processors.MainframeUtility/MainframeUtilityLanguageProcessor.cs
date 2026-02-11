@@ -40,7 +40,15 @@ public sealed class MainframeUtilityLanguageProcessor : ILanguageProcessor
         RegexOptions.Compiled);
 
     private static readonly Regex Db2ProgramPattern = new(
-        @"(?:PROGRAM|PLAN)\s*\(\s*(\w+)\s*\)",
+        @"(?:PROGRAM|PLAN|MEMBER)\s*\(\s*(\w+)\s*\)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex Db2PackagePattern = new(
+        @"(?:PACKAGE|COLLECTION)\s*\(\s*(\w+)\s*\)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex Db2OwnerQualifierPattern = new(
+        @"(?:OWNER|QUALIFIER)\s*\(\s*(\w+)\s*\)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex Db2SystemPattern = new(
@@ -71,6 +79,20 @@ public sealed class MainframeUtilityLanguageProcessor : ILanguageProcessor
         @"'([^']{2,})'",
         RegexOptions.Compiled);
 
+    /// <summary>
+    /// Common English words to skip in SMTP body token replacement.
+    /// </summary>
+    private static readonly FrozenSet<string> SmtpBodySkipWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        // SMTP protocol words
+        "DATE", "FROM", "SUBJECT", "DATA", "HELO", "MAIL", "RCPT", "QUIT",
+        // Truly generic English (conjunctions, pronouns, prepositions)
+        "PLEASE", "HAVE", "QUESTIONS", "YOUR", "THAT",
+        "THIS", "WITH", "WILL", "TOTAL", "NONE", "THEN", "WHEN",
+        "EACH", "WERE", "BEEN", "MORE", "THAN", "THEM", "THEY",
+        "SOME", "ONLY", "ALSO", "DOES", "DONE", "INTO", "OVER"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     // ─────────────────────────────────────────────────────────────────
 
     public bool CanProcess(string filePath, string content)
@@ -91,6 +113,17 @@ public sealed class MainframeUtilityLanguageProcessor : ILanguageProcessor
 
     public LanguageProcessingResult Obfuscate(string content, ObfuscationContext context, string? filePath = null)
     {
+        if (context.Scope.IsDelegationOnly(ProcessorId))
+        {
+            return new LanguageProcessingResult
+            {
+                Content = content,
+                WasTransformed = false,
+                ReplacementCount = 0,
+                ProcessorId = ProcessorId
+            };
+        }
+
         var cardType = DetectCardType(content);
         if (cardType == null)
         {
@@ -111,7 +144,7 @@ public sealed class MainframeUtilityLanguageProcessor : ILanguageProcessor
             CardType.Ftp => ObfuscateFtp(content, context, filePath),
             CardType.Smtp => ObfuscateSmtp(content, context, filePath),
             CardType.Mfs => ObfuscateMfs(content, context, filePath),
-            CardType.DlIControl => (content, 0), // Leave as-is, not sensitive
+            CardType.DlIControl => ObfuscateDlIControl(content, context, filePath),
             CardType.Parameter => ObfuscateParameter(content, context, filePath),
             _ => (content, 0)
         };
@@ -232,11 +265,29 @@ public sealed class MainframeUtilityLanguageProcessor : ILanguageProcessor
         var result = content;
         var count = 0;
 
-        // Replace PROGRAM(xxx) and PLAN(xxx)
+        // Replace PROGRAM(xxx), PLAN(xxx), MEMBER(xxx)
         result = Db2ProgramPattern.Replace(result, m =>
         {
             var name = m.Groups[1].Value;
             var alias = context.GetOrCreateAlias(name, SemanticCategory.Program, filePath);
+            count++;
+            return m.Value.Replace(name, alias);
+        });
+
+        // Replace PACKAGE(xxx), COLLECTION(xxx)
+        result = Db2PackagePattern.Replace(result, m =>
+        {
+            var name = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(name, SemanticCategory.Db2Package, filePath);
+            count++;
+            return m.Value.Replace(name, alias);
+        });
+
+        // Replace OWNER(xxx), QUALIFIER(xxx)
+        result = Db2OwnerQualifierPattern.Replace(result, m =>
+        {
+            var name = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(name, SemanticCategory.Schema, filePath);
             count++;
             return m.Value.Replace(name, alias);
         });
@@ -257,6 +308,23 @@ public sealed class MainframeUtilityLanguageProcessor : ILanguageProcessor
             var alias = context.GetOrCreateAlias(dsn, SemanticCategory.MvsDataset, filePath);
             count++;
             return m.Value.Replace(dsn, alias);
+        });
+
+        return (result, count);
+    }
+
+    private (string Content, int Count) ObfuscateDlIControl(string content, ObfuscationContext context, string? filePath)
+    {
+        var result = content;
+        var count = 0;
+
+        // DL/I control cards use the same PROGRAM(xxx) and PLAN(xxx) patterns
+        result = Db2ProgramPattern.Replace(result, m =>
+        {
+            var name = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(name, SemanticCategory.Program, filePath);
+            count++;
+            return m.Value.Replace(name, alias);
         });
 
         return (result, count);
@@ -586,6 +654,47 @@ public sealed class MainframeUtilityLanguageProcessor : ILanguageProcessor
                         count++;
                     }
                 }
+
+                // Replace remaining identifier-like tokens in body that look organizational
+                // (e.g., ACME-CLM-01, batch IDs). Reuse existing aliases from other files.
+                replaced = Regex.Replace(replaced, @"\b([A-Za-z][\w-]{3,})\b", m =>
+                {
+                    var token = m.Groups[1].Value;
+                    var upper = token.ToUpperInvariant();
+
+                    // Skip if already an alias
+                    if (context.Mappings.Reverse.ContainsKey(upper) ||
+                        context.Mappings.Reverse.ContainsKey(token))
+                        return m.Value;
+
+                    // Reuse existing alias from COBOL/JCL processing
+                    if (context.Mappings.Forward.TryGetValue(upper, out var existingAlias) ||
+                        context.Mappings.Forward.TryGetValue(token, out existingAlias))
+                        return existingAlias;
+
+                    // Skip common English words and structural keywords
+                    if (SmtpBodySkipWords.Contains(upper))
+                        return m.Value;
+
+                    // Skip tokens that are all lowercase and very short (likely English)
+                    if (token.Length < 4 && token == token.ToLowerInvariant())
+                        return m.Value;
+
+                    // Replace: hyphenated, all-uppercase, 4+ chars with any uppercase,
+                    // or 6+ chars regardless of case. This catches company names (Acme),
+                    // business terms (Insurance), identifiers, etc.
+                    if (token.Contains('-') ||
+                        token == token.ToUpperInvariant() ||
+                        token.Length >= 6 ||
+                        (token.Length >= 4 && token.Any(char.IsUpper)))
+                    {
+                        var alias = context.GetOrCreateAlias(upper, SemanticCategory.StringLiteral, filePath);
+                        count++;
+                        return alias;
+                    }
+
+                    return m.Value;
+                });
 
                 sb.Append(replaced);
             }

@@ -210,6 +210,13 @@ public sealed class JclLanguageProcessor : ILanguageProcessor
     /// <inheritdoc />
     public LanguageProcessingResult Obfuscate(string content, ObfuscationContext context, string? filePath = null)
     {
+        // Delegation-only: parse structure but only delegate instream SQL blocks.
+        // JCL identifiers (job names, step names, DD names, etc.) remain untouched.
+        if (context.Scope.IsDelegationOnly(ProcessorIdValue))
+        {
+            return ObfuscateDelegationOnly(content, context, filePath);
+        }
+
         try
         {
             var warnings = new List<string>();
@@ -276,6 +283,80 @@ public sealed class JclLanguageProcessor : ILanguageProcessor
                 ReplacementCount = 0,
                 ProcessorId = ProcessorIdValue,
                 Warnings = [$"JCL obfuscation failed: {ex.Message}"]
+            };
+        }
+    }
+
+    /// <summary>
+    /// Delegation-only mode: parse JCL structure but only delegate instream SQL blocks
+    /// to the SQL processor. All JCL identifiers remain untouched.
+    /// Used when JCL is out of scope but SQL (database) is in scope.
+    /// </summary>
+    private LanguageProcessingResult ObfuscateDelegationOnly(string content, ObfuscationContext context, string? filePath)
+    {
+        try
+        {
+            var warnings = new List<string>();
+            var lines = ParseLines(content, warnings);
+
+            // Skip Pass 1 (discovery) — JCL identifiers are not being obfuscated.
+            // We still need to parse lines so we know which instream blocks are SQL.
+
+            var replacementCount = 0;
+            var builder = new StringBuilder(content.Length);
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (i > 0) builder.Append('\n');
+
+                var line = lines[i];
+
+                // Buffer consecutive instream lines for SQL delegation
+                if (line.LineType == JclLineType.Instream
+                    && line.AssociatedProgram != null
+                    && SqlPrograms.Contains(line.AssociatedProgram))
+                {
+                    var instreamLines = new List<JclLine> { line };
+                    while (i + 1 < lines.Count && lines[i + 1].LineType == JclLineType.Instream)
+                    {
+                        i++;
+                        instreamLines.Add(lines[i]);
+                    }
+
+                    var obfuscated = ObfuscateInstreamSqlBlock(instreamLines, context, ref replacementCount, warnings);
+                    builder.Append(obfuscated);
+                    continue;
+                }
+
+                // All non-SQL lines pass through unchanged
+                builder.Append(line.OriginalText);
+            }
+
+            var result = builder.ToString();
+
+            if (filePath != null && replacementCount > 0)
+            {
+                context.RecordFileProcessing(filePath, ProcessorIdValue, replacementCount);
+            }
+
+            return new LanguageProcessingResult
+            {
+                Content = result,
+                WasTransformed = replacementCount > 0,
+                ReplacementCount = replacementCount,
+                ProcessorId = ProcessorIdValue,
+                Warnings = warnings
+            };
+        }
+        catch (Exception ex)
+        {
+            return new LanguageProcessingResult
+            {
+                Content = content,
+                WasTransformed = false,
+                ReplacementCount = 0,
+                ProcessorId = ProcessorIdValue,
+                Warnings = [$"JCL delegation-only processing failed: {ex.Message}"]
             };
         }
     }
@@ -964,6 +1045,8 @@ public sealed class JclLanguageProcessor : ILanguageProcessor
                 return "//* [Comment removed]";
 
             case JclLineType.Instream:
+                return ObfuscateInstreamLine(line, context, ref replacementCount);
+
             case JclLineType.Delimiter:
             case JclLineType.Null:
                 return line.OriginalText;
@@ -1012,6 +1095,58 @@ public sealed class JclLanguageProcessor : ILanguageProcessor
     /// result split back into lines joined by newlines.
     /// Falls back to returning lines unchanged if the SQL processor is unavailable or fails.
     /// </summary>
+    // ── DB2 DSN command patterns for non-SQL instream data ──
+    private static readonly Regex DsnProgramPlanPattern = new(
+        @"(?:PROGRAM|PLAN)\s*\(\s*(\w+)\s*\)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex DsnSystemPattern = new(
+        @"(?:SYSTEM|S)\s*\(\s*(\w+)\s*\)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex DsnLibraryPattern = new(
+        @"(?:LIBRARY|LIB)\s*\(\s*'([^']+)'\s*\)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Obfuscate a single non-SQL instream line. Handles DB2 DSN commands
+    /// (PROGRAM, PLAN, SYSTEM, LIBRARY) that appear in TSO batch instream data.
+    /// Continuation lines (e.g., "PLAN(xxx) -") are also handled since patterns
+    /// can appear on any line in a multi-line DSN command.
+    /// </summary>
+    private static string ObfuscateInstreamLine(JclLine line, ObfuscationContext context, ref int replacementCount)
+    {
+        var result = line.OriginalText;
+        var localCount = 0;
+
+        result = DsnProgramPlanPattern.Replace(result, m =>
+        {
+            var name = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(name, SemanticCategory.Program, null);
+            localCount++;
+            return m.Value.Replace(name, alias);
+        });
+
+        result = DsnSystemPattern.Replace(result, m =>
+        {
+            var name = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(name, SemanticCategory.Db2System, null);
+            localCount++;
+            return m.Value.Replace(name, alias);
+        });
+
+        result = DsnLibraryPattern.Replace(result, m =>
+        {
+            var dsn = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(dsn, SemanticCategory.MvsDataset, null);
+            localCount++;
+            return m.Value.Replace(dsn, alias);
+        });
+
+        replacementCount += localCount;
+        return result;
+    }
+
     private static string ObfuscateInstreamSqlBlock(
         List<JclLine> instreamLines,
         ObfuscationContext context,
@@ -1025,18 +1160,19 @@ public sealed class JclLanguageProcessor : ILanguageProcessor
             if (j > 0) sqlBuilder.Append('\n');
             sqlBuilder.Append(instreamLines[j].OriginalText);
         }
-        var sqlText = sqlBuilder.ToString();
+        var result = sqlBuilder.ToString();
 
+        // Try SQL delegation first
         try
         {
             var sqlProcessor = context.ProcessorRegistry?.GetProcessor("temp.sql", "");
             if (sqlProcessor != null)
             {
-                var sqlResult = sqlProcessor.Obfuscate(sqlText, context);
+                var sqlResult = sqlProcessor.Obfuscate(result, context);
                 if (sqlResult.WasTransformed)
                 {
                     replacementCount += sqlResult.ReplacementCount;
-                    return sqlResult.Content;
+                    result = sqlResult.Content;
                 }
             }
         }
@@ -1045,8 +1181,37 @@ public sealed class JclLanguageProcessor : ILanguageProcessor
             warnings.Add($"SQL delegation failed for instream block at line {instreamLines[0].LineNumber}: {ex.Message}");
         }
 
-        // Fall back to returning lines unchanged
-        return sqlText;
+        // Always apply DSN command patterns (PROGRAM, PLAN, SYSTEM, LIBRARY)
+        // as post-processing. Instream data for IKJEFT01 often contains DB2 DSN
+        // commands that the SQL processor doesn't handle.
+        var dsnCount = 0;
+
+        result = DsnProgramPlanPattern.Replace(result, m =>
+        {
+            var name = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(name, SemanticCategory.Program, null);
+            dsnCount++;
+            return m.Value.Replace(name, alias);
+        });
+
+        result = DsnSystemPattern.Replace(result, m =>
+        {
+            var name = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(name, SemanticCategory.Db2System, null);
+            dsnCount++;
+            return m.Value.Replace(name, alias);
+        });
+
+        result = DsnLibraryPattern.Replace(result, m =>
+        {
+            var dsn = m.Groups[1].Value;
+            var alias = context.GetOrCreateAlias(dsn, SemanticCategory.MvsDataset, null);
+            dsnCount++;
+            return m.Value.Replace(dsn, alias);
+        });
+
+        replacementCount += dsnCount;
+        return result;
     }
 
     private string ObfuscateJobCard(JclLine line, ObfuscationContext context, ref int replacementCount, List<string> warnings)

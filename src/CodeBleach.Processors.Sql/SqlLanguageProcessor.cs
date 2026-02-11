@@ -35,7 +35,7 @@ public sealed class SqlLanguageProcessor : ILanguageProcessor
 
     public LanguageProcessingResult Obfuscate(string content, ObfuscationContext context, string? filePath = null)
     {
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(content) || context.Scope.IsDelegationOnly(ProcessorId))
         {
             return new LanguageProcessingResult
             {
@@ -1253,7 +1253,7 @@ public sealed class Db2SqlLanguageProcessor : ILanguageProcessor
 
     public LanguageProcessingResult Obfuscate(string content, ObfuscationContext context, string? filePath = null)
     {
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(content) || context.Scope.IsDelegationOnly(ProcessorId))
         {
             return new LanguageProcessingResult
             {

@@ -102,16 +102,23 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
             }
 
             var semanticModel = compilation.GetSemanticModel(tree);
+            var delegationOnly = context.Scope.IsDelegationOnly(ProcessorId);
 
             // -- Pass 1: Discovery ------------------------------------------------
             // Walk the entire syntax tree to register all user-defined identifiers
             // in the ObfuscationContext. This pass does NOT modify the tree.
-            var discoveryWalker = new DiscoveryWalker(semanticModel, context, filePath);
-            discoveryWalker.Visit(tree.GetRoot());
+            // Skip in delegation-only mode (only SQL-in-strings gets processed).
+            if (!delegationOnly)
+            {
+                var discoveryWalker = new DiscoveryWalker(semanticModel, context, filePath);
+                discoveryWalker.Visit(tree.GetRoot());
+            }
 
             // -- Pass 2: Rewrite --------------------------------------------------
             // Walk the tree again, replacing identifiers, comments, and string literals.
-            var rewriter = new ObfuscationRewriter(semanticModel, context, filePath, warnings);
+            // In delegation-only mode, the rewriter skips identifier/comment rewrites
+            // and only processes SQL-in-strings delegation.
+            var rewriter = new ObfuscationRewriter(semanticModel, context, filePath, warnings, delegationOnly);
             var newRoot = rewriter.Visit(tree.GetRoot());
 
             var transformedContent = newRoot?.ToFullString() ?? content;
@@ -678,6 +685,7 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
         private readonly ObfuscationContext _context;
         private readonly string? _filePath;
         private readonly List<string> _warnings;
+        private readonly bool _delegationOnly;
 
         /// <summary>Total number of replacements made by this rewriter.</summary>
         public int ReplacementCount { get; private set; }
@@ -686,18 +694,22 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
             SemanticModel semanticModel,
             ObfuscationContext context,
             string? filePath,
-            List<string> warnings)
+            List<string> warnings,
+            bool delegationOnly = false)
         {
             _semanticModel = semanticModel;
             _context = context;
             _filePath = filePath;
             _warnings = warnings;
+            _delegationOnly = delegationOnly;
         }
 
         // -- Identifier rewriting (main replacement point) --------------------
 
         public override SyntaxNode? VisitIdentifierName(IdentifierNameSyntax node)
         {
+            if (_delegationOnly) return base.VisitIdentifierName(node);
+
             // Preserve XML literal element/attribute names
             if (IsInsideXmlLiteral(node))
             {
@@ -730,6 +742,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitGenericName(GenericNameSyntax node)
         {
+            if (_delegationOnly) return base.VisitGenericName(node);
+
             var symbolInfo = _semanticModel.GetSymbolInfo(node);
             var symbol = symbolInfo.Symbol;
 
@@ -759,6 +773,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitClassBlock(ClassBlockSyntax node)
         {
+            if (_delegationOnly) return base.VisitClassBlock(node);
+
             var newStatement = RenameStatementIdentifier(
                 node, node.ClassStatement, node.ClassStatement.Identifier,
                 (stmt, id) => ((ClassStatementSyntax)stmt).WithIdentifier(id));
@@ -772,6 +788,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitModuleBlock(ModuleBlockSyntax node)
         {
+            if (_delegationOnly) return base.VisitModuleBlock(node);
+
             var newStatement = RenameStatementIdentifier(
                 node, node.ModuleStatement, node.ModuleStatement.Identifier,
                 (stmt, id) => ((ModuleStatementSyntax)stmt).WithIdentifier(id));
@@ -785,6 +803,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitStructureBlock(StructureBlockSyntax node)
         {
+            if (_delegationOnly) return base.VisitStructureBlock(node);
+
             var newStatement = RenameStatementIdentifier(
                 node, node.StructureStatement, node.StructureStatement.Identifier,
                 (stmt, id) => ((StructureStatementSyntax)stmt).WithIdentifier(id));
@@ -798,6 +818,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitInterfaceBlock(InterfaceBlockSyntax node)
         {
+            if (_delegationOnly) return base.VisitInterfaceBlock(node);
+
             var newStatement = RenameStatementIdentifier(
                 node, node.InterfaceStatement, node.InterfaceStatement.Identifier,
                 (stmt, id) => ((InterfaceStatementSyntax)stmt).WithIdentifier(id));
@@ -811,6 +833,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitEnumBlock(EnumBlockSyntax node)
         {
+            if (_delegationOnly) return base.VisitEnumBlock(node);
+
             var newStatement = RenameStatementIdentifier(
                 node, node.EnumStatement, node.EnumStatement.Identifier,
                 (stmt, id) => ((EnumStatementSyntax)stmt).WithIdentifier(id));
@@ -824,6 +848,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node)
         {
+            if (_delegationOnly) return base.VisitEnumMemberDeclaration(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -842,6 +868,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitMethodBlock(MethodBlockSyntax node)
         {
+            if (_delegationOnly) return base.VisitMethodBlock(node);
+
             // MethodBlockSyntax handles Sub/Function; constructors are ConstructorBlockSyntax.
             var methodStatement = node.SubOrFunctionStatement;
 
@@ -865,6 +893,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitPropertyBlock(PropertyBlockSyntax node)
         {
+            if (_delegationOnly) return base.VisitPropertyBlock(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -887,6 +917,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitEventStatement(EventStatementSyntax node)
         {
+            if (_delegationOnly) return base.VisitEventStatement(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -905,6 +937,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitDelegateStatement(DelegateStatementSyntax node)
         {
+            if (_delegationOnly) return base.VisitDelegateStatement(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -925,6 +959,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node)
         {
+            if (_delegationOnly) return base.VisitFieldDeclaration(node);
+
             var newDeclarators = new List<VariableDeclaratorSyntax>();
             var modified = false;
 
@@ -977,6 +1013,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node)
         {
+            if (_delegationOnly) return base.VisitLocalDeclarationStatement(node);
+
             var newDeclarators = new List<VariableDeclaratorSyntax>();
             var modified = false;
 
@@ -1028,6 +1066,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitParameter(ParameterSyntax node)
         {
+            if (_delegationOnly) return base.VisitParameter(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -1052,6 +1092,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitTypeParameter(TypeParameterSyntax node)
         {
+            if (_delegationOnly) return base.VisitTypeParameter(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -1072,6 +1114,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitImportsStatement(ImportsStatementSyntax node)
         {
+            if (_delegationOnly) return base.VisitImportsStatement(node);
+
             var newClauses = new List<ImportsClauseSyntax>();
             var modified = false;
 
@@ -1177,6 +1221,9 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
                     }
                 }
 
+                // In delegation-only mode, skip non-SQL string alias replacement
+                if (_delegationOnly) return base.VisitLiteralExpression(node);
+
                 var alias = _context.GetOrCreateAlias(text, SemanticCategory.StringLiteral, _filePath);
 
                 if (!string.Equals(alias, text, StringComparison.Ordinal))
@@ -1228,6 +1275,9 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
                     }
                 }
 
+                // In delegation-only mode, skip non-SQL string alias replacement
+                if (_delegationOnly) return base.VisitInterpolatedStringText(node);
+
                 var alias = _context.GetOrCreateAlias(text, SemanticCategory.StringLiteral, _filePath);
 
                 if (!string.Equals(alias, text, StringComparison.Ordinal))
@@ -1252,6 +1302,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
 
         public override SyntaxToken VisitToken(SyntaxToken token)
         {
+            if (_delegationOnly) return base.VisitToken(token);
+
             var newToken = token;
 
             if (token.HasLeadingTrivia)
@@ -1326,6 +1378,8 @@ public sealed class VisualBasicLanguageProcessor : ILanguageProcessor
             SyntaxToken identifier,
             Func<SyntaxNode, SyntaxToken, SyntaxNode> withIdentifier)
         {
+            if (_delegationOnly) return null;
+
             var symbol = _semanticModel.GetDeclaredSymbol(blockNode);
             if (symbol != null && IsUserDefined(symbol))
             {

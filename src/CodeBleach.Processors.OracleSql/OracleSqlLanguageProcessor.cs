@@ -752,7 +752,7 @@ public sealed class OracleSqlLanguageProcessor : ILanguageProcessor
 
     public LanguageProcessingResult Obfuscate(string content, ObfuscationContext context, string? filePath = null)
     {
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(content) || context.Scope.IsDelegationOnly(ProcessorId))
         {
             return NoChange(content);
         }

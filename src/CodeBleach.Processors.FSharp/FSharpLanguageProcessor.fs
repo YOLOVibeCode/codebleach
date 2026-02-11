@@ -1027,6 +1027,19 @@ type FSharpLanguageProcessor() =
             ()
 
         member this.Obfuscate(content: string, context: ObfuscationContext, filePath: string) =
+            // Delegation-only: F# identifiers stay untouched; only SQL-in-string
+            // literals would be delegated.  The SQL delegation is woven into the
+            // full AST walk, so for now we short-circuit and return unchanged.
+            if context.Scope.IsDelegationOnly("fsharp") then
+                LanguageProcessingResult(
+                    Content = content,
+                    WasTransformed = false,
+                    ReplacementCount = 0,
+                    ProcessorId = "fsharp",
+                    Warnings = (ResizeArray<string>() :> IReadOnlyList<string>)
+                )
+            else
+
             let warnings = ResizeArray<string>()
 
             try

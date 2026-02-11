@@ -495,6 +495,13 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             };
         }
 
+        // Delegation-only: parse structure but only delegate EXEC SQL blocks to SQL processor.
+        // COBOL identifiers, host variables, and non-SQL lines remain untouched.
+        if (context.Scope.IsDelegationOnly(ProcessorId))
+        {
+            return ObfuscateDelegationOnly(content, context, filePath);
+        }
+
         var warnings = new List<string>();
 
         try
@@ -597,8 +604,81 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                     i--;
 
                     // Now delegate the SQL body to the SQL processor for identifier obfuscation
-                    var (updatedLines, sqlCount) = DelegateExecSqlToSqlProcessor(execGroup, context, filePath);
+                    var (updatedLines, sqlCount) = DelegateExecSqlToSqlProcessor(execGroup, context, filePath, aliasMap);
                     replacementCount += sqlCount;
+
+                    // Post-processing: apply aliasMap-based replacement to catch any SQL
+                    // identifiers (table/column names) that the SQL processor missed.
+                    // This handles the case where ScriptDom partially processes or fails.
+                    for (int u = 0; u < updatedLines.Count; u++)
+                    {
+                        var postCount = 0;
+                        var postReplaced = SqlIdentifierTokenPattern.Replace(updatedLines[u], m =>
+                        {
+                            var token = m.Groups[1].Value;
+                            var upper = token.ToUpperInvariant();
+                            if (SqlReservedWords.Contains(upper)) return m.Value;
+                            if (ReservedWords.Contains(upper)) return m.Value;
+                            if (aliasMap.TryGetValue(upper, out var postAlias))
+                            {
+                                postCount++;
+                                return postAlias;
+                            }
+                            return m.Value;
+                        });
+                        if (postCount > 0)
+                        {
+                            updatedLines[u] = postReplaced;
+                            replacementCount += postCount;
+                        }
+                    }
+
+                    // Post-processing: re-apply host variable replacement.
+                    // DelegateExecSqlToSqlProcessor extracts SQL from the original line
+                    // content (line.AreaA + line.AreaB) for ScriptDom parsing. When SQL
+                    // delegation partially succeeds, the redistributed output may contain
+                    // original host variable names (e.g. :DCLSCLM-REC.CLM-PMT-ID) that
+                    // were already replaced by ReplaceExecSqlBlock but got overwritten.
+                    for (int u = 0; u < updatedLines.Count; u++)
+                    {
+                        var hvPostCount = 0;
+                        var hvPostReplaced = HostVariablePattern.Replace(updatedLines[u], match =>
+                        {
+                            var varName = match.Groups[1].Value.ToUpperInvariant();
+                            var recordAlias = varName;
+                            var anyReplaced = false;
+
+                            if (aliasMap.TryGetValue(varName, out var alias)
+                                || context.Mappings.Forward.TryGetValue(varName, out alias))
+                            {
+                                recordAlias = alias;
+                                anyReplaced = true;
+                                hvPostCount++;
+                            }
+
+                            if (match.Groups[2].Success)
+                            {
+                                var fieldName = match.Groups[2].Value.ToUpperInvariant();
+                                var fieldAlias = fieldName;
+                                if (aliasMap.TryGetValue(fieldName, out var fAlias)
+                                    || context.Mappings.Forward.TryGetValue(fieldName, out fAlias))
+                                {
+                                    fieldAlias = fAlias;
+                                    anyReplaced = true;
+                                    hvPostCount++;
+                                }
+                                return anyReplaced ? ":" + recordAlias + "." + fieldAlias : match.Value;
+                            }
+
+                            return anyReplaced ? ":" + recordAlias : match.Value;
+                        });
+                        if (hvPostCount > 0)
+                        {
+                            updatedLines[u] = hvPostReplaced;
+                            replacementCount += hvPostCount;
+                        }
+                    }
+
                     resultLines.AddRange(updatedLines);
                     continue;
                 }
@@ -627,6 +707,82 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
         catch (Exception ex)
         {
             warnings.Add($"COBOL processing error: {ex.Message}");
+            return new LanguageProcessingResult
+            {
+                Content = content,
+                WasTransformed = false,
+                ReplacementCount = 0,
+                ProcessorId = ProcessorId,
+                Warnings = warnings
+            };
+        }
+    }
+
+    /// <summary>
+    /// Delegation-only mode: parse COBOL structure but only delegate EXEC SQL blocks
+    /// to the SQL processor. All COBOL identifiers and host variables remain untouched.
+    /// Used when COBOL is out of scope but SQL (database) is in scope.
+    /// </summary>
+    private LanguageProcessingResult ObfuscateDelegationOnly(string content, ObfuscationContext context, string? filePath)
+    {
+        var warnings = new List<string>();
+
+        try
+        {
+            var lines = CobolParser.ParseAllLines(content);
+            ResolveExecBlocks(lines);
+
+            int replacementCount = 0;
+            var resultLines = new List<string>(lines.Count);
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var line = lines[i];
+
+                if (line.LineType == CobolLineType.ExecSqlBlock)
+                {
+                    // Gather contiguous EXEC SQL block lines
+                    var execGroup = new List<(CobolLine Line, string CurrentText)>();
+                    while (i < lines.Count && lines[i].LineType == CobolLineType.ExecSqlBlock)
+                    {
+                        var execLine = lines[i];
+                        // Pass through original text — no host variable replacement
+                        execGroup.Add((execLine, execLine.OriginalText));
+                        i++;
+                    }
+                    i--;
+
+                    // Delegate SQL body to SQL processor (aliasMap: null = no COBOL-side substitution)
+                    var (updatedLines, sqlCount) = DelegateExecSqlToSqlProcessor(execGroup, context, filePath, aliasMap: null);
+                    replacementCount += sqlCount;
+
+                    resultLines.AddRange(updatedLines);
+                    continue;
+                }
+
+                // All non-SQL lines pass through unchanged
+                resultLines.Add(line.OriginalText);
+            }
+
+            var result = string.Join("\n", resultLines);
+
+            if (filePath != null && replacementCount > 0)
+            {
+                context.RecordFileProcessing(filePath, ProcessorId, replacementCount);
+            }
+
+            return new LanguageProcessingResult
+            {
+                Content = result,
+                WasTransformed = replacementCount > 0,
+                ReplacementCount = replacementCount,
+                ProcessorId = ProcessorId,
+                Warnings = warnings
+            };
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"COBOL delegation-only processing error: {ex.Message}");
             return new LanguageProcessingResult
             {
                 Content = content,
@@ -1148,7 +1304,7 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                 return ReplaceSectionHeader(line, aliasMap);
 
             case CobolLineType.ParagraphHeader:
-                return ReplaceParagraphHeader(line, aliasMap);
+                return ReplaceParagraphHeader(line, aliasMap, context, filePath);
 
             case CobolLineType.DataDefinition:
                 return ReplaceDataDefinition(line, aliasMap, context, filePath);
@@ -1206,7 +1362,7 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
     }
 
     /// <summary>
-    /// Replace PROGRAM-ID if present in a division header or similar line.
+    /// Replace PROGRAM-ID or PROCEDURE DIVISION USING parameters in a division header line.
     /// </summary>
     private static (string NewLine, int Count) ReplaceProgramIdLine(
         CobolLine line,
@@ -1229,6 +1385,31 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                         + alias
                         + combined[(match.Groups[2].Index + match.Groups[2].Length)..];
                     count++;
+                }
+            }
+        }
+
+        // PROCEDURE DIVISION USING param1 param2 ...
+        // Replace each identifier after USING that is in the aliasMap
+        if (combinedUpper.Contains("USING"))
+        {
+            var usingMatch = Regex.Match(combined, @"(USING\s+)(.*)", RegexOptions.IgnoreCase);
+            if (usingMatch.Success)
+            {
+                var paramsPart = usingMatch.Groups[2].Value;
+                var replacedParams = CobolIdentifierPattern.Replace(paramsPart, m =>
+                {
+                    var word = m.Value.ToUpperInvariant();
+                    if (aliasMap.TryGetValue(word, out var paramAlias))
+                    {
+                        count++;
+                        return paramAlias;
+                    }
+                    return m.Value;
+                });
+                if (count > 0)
+                {
+                    combined = combined[..usingMatch.Groups[2].Index] + replacedParams;
                 }
             }
         }
@@ -1264,10 +1445,15 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
 
     /// <summary>
     /// Replace paragraph name in a paragraph header.
+    /// Also handles IDENTIFICATION DIVISION metadata paragraphs
+    /// (INSTALLATION, AUTHOR, etc.) which are classified as ParagraphHeader
+    /// because they start in Area A.
     /// </summary>
-    private static (string NewLine, int Count) ReplaceParagraphHeader(
+    private (string NewLine, int Count) ReplaceParagraphHeader(
         CobolLine line,
-        Dictionary<string, string> aliasMap)
+        Dictionary<string, string> aliasMap,
+        ObfuscationContext context,
+        string? filePath)
     {
         var combined = line.AreaA + line.AreaB;
         int count = 0;
@@ -1286,6 +1472,26 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
                 count++;
             }
             return (RebuildFromCombined(line, combined), count);
+        }
+
+        // Check for IDENTIFICATION DIVISION metadata paragraphs:
+        // INSTALLATION, AUTHOR, DATE-WRITTEN, DATE-COMPILED, SECURITY, REMARKS
+        // These are classified as ParagraphHeader because they start in Area A,
+        // but the content after the period needs to be obfuscated.
+        var idMetaMatch = Regex.Match(combined,
+            @"^(\s*(?:INSTALLATION|AUTHOR|DATE-WRITTEN|DATE-COMPILED|SECURITY|REMARKS)\s*\.\s*)(.+)$",
+            RegexOptions.IgnoreCase);
+        if (idMetaMatch.Success && idMetaMatch.Groups[2].Value.Trim().Length > 0)
+        {
+            var metaContent = idMetaMatch.Groups[2].Value.Trim().TrimEnd('.');
+            if (metaContent.Length >= 2 && metaContent.Any(char.IsLetter))
+            {
+                var metaAlias = context.GetOrCreateAlias(metaContent, SemanticCategory.StringLiteral, filePath);
+                var trailingDot = idMetaMatch.Groups[2].Value.TrimEnd().EndsWith(".", StringComparison.Ordinal) ? "." : "";
+                combined = idMetaMatch.Groups[1].Value + metaAlias + trailingDot;
+                count++;
+                return (RebuildFromCombined(line, combined), count);
+            }
         }
 
         // Paragraph header: NAME. or NAME (at start)
@@ -1470,13 +1676,16 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
         int count = 0;
 
         // Replace host variables: :VARIABLE-NAME or :RECORD.FIELD
+        // Check local aliasMap first, then fall back to global MappingTable
+        // (record names from copybooks may not be in the local aliasMap).
         combined = HostVariablePattern.Replace(combined, match =>
         {
             var varName = match.Groups[1].Value.ToUpperInvariant();
             var recordAlias = varName;
             var replaced = false;
 
-            if (aliasMap.TryGetValue(varName, out var alias))
+            if (aliasMap.TryGetValue(varName, out var alias)
+                || context.Mappings.Forward.TryGetValue(varName, out alias))
             {
                 recordAlias = alias;
                 replaced = true;
@@ -1497,7 +1706,8 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             {
                 var fieldName = match.Groups[2].Value.ToUpperInvariant();
                 var fieldAlias = fieldName;
-                if (aliasMap.TryGetValue(fieldName, out var fAlias))
+                if (aliasMap.TryGetValue(fieldName, out var fAlias)
+                    || context.Mappings.Forward.TryGetValue(fieldName, out fAlias))
                 {
                     fieldAlias = fAlias;
                     replaced = true;
@@ -1531,13 +1741,16 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
     private static (List<string> UpdatedLines, int Count) DelegateExecSqlToSqlProcessor(
         List<(CobolLine Line, string CurrentText)> execGroup,
         ObfuscationContext context,
-        string? filePath)
+        string? filePath,
+        Dictionary<string, string>? aliasMap = null)
     {
-        // If no registry or no SQL processor available, return lines unchanged
+        // If no registry or no SQL processor available, use fallback
         var sqlProcessor = context.ProcessorRegistry?.GetProcessor("temp.sql", "");
         if (sqlProcessor == null)
         {
-            return (execGroup.Select(g => g.CurrentText).ToList(), 0);
+            return aliasMap != null
+                ? FallbackReplaceSqlIdentifiers(execGroup, aliasMap)
+                : (execGroup.Select(g => g.CurrentText).ToList(), 0);
         }
 
         // Extract the SQL body from the EXEC SQL block lines.
@@ -1602,13 +1815,18 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
         }
         catch
         {
-            // If SQL processing fails, return lines unchanged
-            return (execGroup.Select(g => g.CurrentText).ToList(), 0);
+            // If SQL processing fails, fall back to aliasMap-based replacement
+            return aliasMap != null
+                ? FallbackReplaceSqlIdentifiers(execGroup, aliasMap)
+                : (execGroup.Select(g => g.CurrentText).ToList(), 0);
         }
 
         if (!sqlResult.WasTransformed || sqlResult.ReplacementCount == 0)
         {
-            return (execGroup.Select(g => g.CurrentText).ToList(), 0);
+            // SQL processor made no changes (likely failed to parse) — fall back
+            return aliasMap != null
+                ? FallbackReplaceSqlIdentifiers(execGroup, aliasMap)
+                : (execGroup.Select(g => g.CurrentText).ToList(), 0);
         }
 
         // Now we need to patch the obfuscated SQL back into the COBOL lines.
@@ -1717,6 +1935,75 @@ public sealed class CobolLanguageProcessor : ILanguageProcessor
             sb.Append(tokens.Dequeue());
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Regex matching SQL identifier tokens (table names, column names) that are NOT
+    /// host variables (no leading colon) and NOT SQL keywords.
+    /// </summary>
+    private static readonly Regex SqlIdentifierTokenPattern =
+        new(@"(?<!:)(?<!\w)\b([A-Za-z][A-Za-z0-9_-]{2,})\b", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Common SQL reserved words to skip during fallback replacement.
+    /// </summary>
+    private static readonly HashSet<string> SqlReservedWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "INTO", "SET",
+        "UPDATE", "INSERT", "DELETE", "VALUES", "ORDER", "GROUP", "HAVING",
+        "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "ON", "AS", "IN",
+        "BETWEEN", "LIKE", "IS", "NULL", "EXISTS", "ALL", "ANY", "SOME",
+        "DISTINCT", "COUNT", "SUM", "AVG", "MIN", "MAX", "UNION",
+        "CREATE", "ALTER", "DROP", "TABLE", "INDEX", "VIEW", "CURSOR",
+        "DECLARE", "OPEN", "CLOSE", "FETCH", "COMMIT", "ROLLBACK",
+        "EXEC", "SQL", "END-EXEC", "WHENEVER", "SQLERROR", "SQLWARNING",
+        "CONTINUE", "GOTO", "INCLUDE", "SQLCA"
+    };
+
+    /// <summary>
+    /// Fallback replacement for EXEC SQL blocks when the SQL processor delegation fails.
+    /// Replaces non-host-variable SQL identifiers (table/column names) using the aliasMap.
+    /// Operates on currentText (which already has host vars replaced by ReplaceExecSqlBlock).
+    /// </summary>
+    private static (List<string> UpdatedLines, int Count) FallbackReplaceSqlIdentifiers(
+        List<(CobolLine Line, string CurrentText)> execGroup,
+        Dictionary<string, string> aliasMap)
+    {
+        var updatedLines = new List<string>(execGroup.Count);
+        int totalCount = 0;
+
+        foreach (var (line, currentText) in execGroup)
+        {
+            // Apply identifier replacement directly to currentText
+            // (which already has host variables replaced by ReplaceExecSqlBlock).
+            // The SqlIdentifierTokenPattern uses negative lookbehind (?<!:) to skip host vars.
+            var count = 0;
+            var replaced = SqlIdentifierTokenPattern.Replace(currentText, m =>
+            {
+                var token = m.Groups[1].Value;
+                var upper = token.ToUpperInvariant();
+
+                // Skip SQL reserved words
+                if (SqlReservedWords.Contains(upper)) return m.Value;
+
+                // Skip COBOL reserved words
+                if (ReservedWords.Contains(upper)) return m.Value;
+
+                // Replace if in aliasMap
+                if (aliasMap.TryGetValue(upper, out var alias))
+                {
+                    count++;
+                    return alias;
+                }
+
+                return m.Value;
+            });
+
+            totalCount += count;
+            updatedLines.Add(count > 0 ? replaced : currentText);
+        }
+
+        return (updatedLines, totalCount);
     }
 
     /// <summary>

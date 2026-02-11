@@ -44,6 +44,12 @@ public static class SanitizeCommand
         var verifyOption = new Option<bool>(
             "--verify",
             "Build the output after obfuscation to verify correctness");
+        var scopeOption = new Option<string?>(
+            "--scope",
+            "Comma-separated scope filter (e.g., 'database', 'mainframe,database', 'tsql,cobol'). " +
+            "Groups: database, mainframe, dotnet, web, scripting. " +
+            "IDs: tsql, db2sql, oraclesql, csharp, vbnet, fsharp, javascript, cobol, jcl, mainframe-utility, vbscript. " +
+            "Default: everything in scope.");
 
         var command = new Command("sanitize", "Sanitize a directory")
         {
@@ -54,13 +60,23 @@ public static class SanitizeCommand
             forceOption,
             rulesOption,
             levelOption,
-            verifyOption
+            verifyOption,
+            scopeOption
         };
 
-        command.SetHandler(async (source, output, dryRun, verbose, force, rulesFile, level, verify) =>
+        command.SetHandler(async (ctx) =>
         {
-            await HandleAsync(source, output, dryRun, verbose, force, rulesFile, level, verify);
-        }, sourceArg, outputOption, dryRunOption, verboseOption, forceOption, rulesOption, levelOption, verifyOption);
+            var source = ctx.ParseResult.GetValueForArgument(sourceArg);
+            var output = ctx.ParseResult.GetValueForOption(outputOption);
+            var dryRun = ctx.ParseResult.GetValueForOption(dryRunOption);
+            var verbose = ctx.ParseResult.GetValueForOption(verboseOption);
+            var force = ctx.ParseResult.GetValueForOption(forceOption);
+            var rulesFile = ctx.ParseResult.GetValueForOption(rulesOption);
+            var level = ctx.ParseResult.GetValueForOption(levelOption);
+            var verify = ctx.ParseResult.GetValueForOption(verifyOption);
+            var scopeStr = ctx.ParseResult.GetValueForOption(scopeOption);
+            await HandleAsync(source, output, dryRun, verbose, force, rulesFile, level, verify, scopeStr);
+        });
 
         return command;
     }
@@ -94,7 +110,8 @@ public static class SanitizeCommand
         bool force,
         FileInfo? rulesFile,
         int level,
-        bool verify)
+        bool verify,
+        string? scopeString = null)
     {
         if (!source.Exists)
         {
@@ -110,15 +127,31 @@ public static class SanitizeCommand
             _ => ObfuscationLevel.Full
         };
 
+        ObfuscationScope scope;
+        try
+        {
+            scope = ObfuscationScope.Parse(scopeString);
+        }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            Environment.Exit(1);
+            return;
+        }
+
         var outputPath = output?.FullName ?? $"{source.FullName}-sanitize";
         var outputDir = new DirectoryInfo(outputPath);
 
         if (outputDir.Exists && !force)
         {
-            Console.Error.WriteLine($"Error: Output directory already exists: {outputPath}");
-            Console.Error.WriteLine("Use --force to overwrite.");
-            Environment.Exit(1);
-            return;
+            Console.Write($"Output directory already exists: {outputPath}\nOverwrite? [y/N] ");
+            var response = Console.ReadLine()?.Trim();
+            if (!string.Equals(response, "y", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Aborted.");
+                return;
+            }
         }
 
         if (dryRun)
@@ -131,6 +164,10 @@ public static class SanitizeCommand
         Console.WriteLine($"Sanitizing: {source.FullName}");
         Console.WriteLine($"Output:     {outputPath}");
         Console.WriteLine($"Level:      {levelLabel}");
+        if (scope.IsFiltered)
+        {
+            Console.WriteLine($"Scope:      {string.Join(", ", scope.RawSpecifiers)}");
+        }
         Console.WriteLine();
 
         var stopwatch = Stopwatch.StartNew();
@@ -180,29 +217,33 @@ public static class SanitizeCommand
         // Setup obfuscation context (shared across all files and processors)
         var mappings = new MappingTable();
         var context = new ObfuscationContext(obfuscationLevel, mappings);
+        context.Scope = scope;
         var processedFiles = new List<string>();
         var processorsUsed = new HashSet<string>();
         var totalFiles = 0;
         var skippedFiles = 0;
         var totalReplacements = 0;
 
-        // Setup language processor registry for Level 2
+        // Setup language processor registry for Level 2 (or Level 1 with scope for file matching)
         ILanguageProcessorRegistry? processorRegistry = null;
-        if (obfuscationLevel == ObfuscationLevel.Full)
+        if (obfuscationLevel == ObfuscationLevel.Full || scope.IsFiltered)
         {
             processorRegistry = CreateProcessorRegistry();
             context.ProcessorRegistry = processorRegistry;
 
-            // Prepare batch context for processors that need it (e.g., Roslyn compilation)
-            // Include extensionless files for Level 2 (mainframe FTP downloads often lack extensions)
-            var filesToBatch = fileProcessor.GetFilesToProcess(source.FullName,
-                includeExtensionless: true).ToList();
-            foreach (var processor in processorRegistry.GetAll())
+            if (obfuscationLevel == ObfuscationLevel.Full)
             {
-                var batchFiles = filesToBatch.Where(f => processor.SupportedExtensions.Contains(Path.GetExtension(f))).ToList();
-                if (batchFiles.Count > 0)
+                // Prepare batch context for processors that need it (e.g., Roslyn compilation)
+                // Include extensionless files for Level 2 (mainframe FTP downloads often lack extensions)
+                var filesToBatch = fileProcessor.GetFilesToProcess(source.FullName,
+                    includeExtensionless: true).ToList();
+                foreach (var processor in processorRegistry.GetAll())
                 {
-                    processor.PrepareBatch(batchFiles, context);
+                    var batchFiles = filesToBatch.Where(f => processor.SupportedExtensions.Contains(Path.GetExtension(f))).ToList();
+                    if (batchFiles.Count > 0)
+                    {
+                        processor.PrepareBatch(batchFiles, context);
+                    }
                 }
             }
         }
@@ -235,6 +276,7 @@ public static class SanitizeCommand
                 var processor = processorRegistry.GetProcessor(file, content);
                 if (processor != null)
                 {
+                    // Processor internally checks context.Scope for full vs delegation-only mode
                     var langResult = processor.Obfuscate(content, context, file);
                     transformedContent = langResult.Content;
                     fileReplacements += langResult.ReplacementCount;
@@ -255,26 +297,56 @@ public static class SanitizeCommand
                     }
 
                     // Defense-in-depth: run regex sanitizer on AST-processed output
-                    var regexResult = sanitizer.Sanitize(transformedContent, mappings);
-                    if (regexResult.WasSanitized)
+                    // Skip for delegation-only files (their own identifiers aren't obfuscated)
+                    if (!scope.IsDelegationOnly(processor.ProcessorId))
                     {
-                        transformedContent = regexResult.Content;
-                        fileReplacements += regexResult.Matches.Count;
-                        fileWasProcessed = true;
+                        var regexResult = sanitizer.Sanitize(transformedContent, mappings);
+                        if (regexResult.WasSanitized)
+                        {
+                            transformedContent = regexResult.Content;
+                            fileReplacements += regexResult.Matches.Count;
+                            fileWasProcessed = true;
+                        }
                     }
                 }
                 else
                 {
-                    // No language processor -- fall back to Level 1 regex
+                    // No language processor -- fall back to Level 1 regex (only if scope allows)
+                    if (!scope.IsFiltered)
+                    {
+                        var regexResult = sanitizer.Sanitize(content, mappings);
+                        transformedContent = regexResult.Content;
+                        fileReplacements = regexResult.Matches.Count;
+                        fileWasProcessed = regexResult.WasSanitized;
+                    }
+                    else
+                    {
+                        transformedContent = content;
+                    }
+                }
+            }
+            else if (obfuscationLevel == ObfuscationLevel.Sanitize && scope.IsFiltered)
+            {
+                // Level 1 + scope: only files whose extension maps to an in-scope processor get regex
+                var hasInScopeProcessor = processorRegistry != null
+                    ? processorRegistry.GetProcessor(file, content) is { } p && scope.IsInScope(p.ProcessorId)
+                    : false;
+
+                if (hasInScopeProcessor)
+                {
                     var regexResult = sanitizer.Sanitize(content, mappings);
                     transformedContent = regexResult.Content;
                     fileReplacements = regexResult.Matches.Count;
                     fileWasProcessed = regexResult.WasSanitized;
                 }
+                else
+                {
+                    transformedContent = content;
+                }
             }
             else
             {
-                // Level 1: regex-only
+                // Level 1: regex-only (no scope filter)
                 var regexResult = sanitizer.Sanitize(content, mappings);
                 transformedContent = regexResult.Content;
                 fileReplacements = regexResult.Matches.Count;
@@ -404,7 +476,8 @@ public static class SanitizeCommand
                 Level = obfuscationLevel,
                 ProcessorsUsed = processorsUsed.Order().ToList(),
                 EnhancedMap = obfuscationLevel == ObfuscationLevel.Full ? context.SourceMap : null,
-                FilePathMappings = mappings.FilePathForward.Count > 0 ? new Dictionary<string, string>(mappings.FilePathForward) : null
+                FilePathMappings = mappings.FilePathForward.Count > 0 ? new Dictionary<string, string>(mappings.FilePathForward) : null,
+                ScopeSpecifiers = scope.IsFiltered ? scope.RawSpecifiers : null
             };
 
             await manifestManager.SaveManifestAsync(manifest, outputPath);

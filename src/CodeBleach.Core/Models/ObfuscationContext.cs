@@ -30,6 +30,13 @@ public sealed class ObfuscationContext
     /// </summary>
     public ILanguageProcessorRegistry? ProcessorRegistry { get; set; }
 
+    /// <summary>
+    /// Scope filter for selective obfuscation. When set, only in-scope processors
+    /// perform full obfuscation; out-of-scope processors run in delegation-only mode.
+    /// Default is <see cref="ObfuscationScope.All"/> (unfiltered).
+    /// </summary>
+    public ObfuscationScope Scope { get; set; } = ObfuscationScope.All();
+
     public ObfuscationContext(ObfuscationLevel level, MappingTable? mappings = null, NamingStrategy? namingStrategy = null)
     {
         Level = level;

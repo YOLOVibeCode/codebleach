@@ -101,16 +101,23 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
             }
 
             var semanticModel = compilation.GetSemanticModel(tree);
+            var delegationOnly = context.Scope.IsDelegationOnly(ProcessorId);
 
             // ── Pass 1: Discovery ──────────────────────────────────────────
             // Walk the entire syntax tree to register all user-defined identifiers
             // in the ObfuscationContext. This pass does NOT modify the tree.
-            var discoveryWalker = new DiscoveryWalker(semanticModel, context, filePath);
-            discoveryWalker.Visit(tree.GetRoot());
+            // Skip in delegation-only mode (only SQL-in-strings gets processed).
+            if (!delegationOnly)
+            {
+                var discoveryWalker = new DiscoveryWalker(semanticModel, context, filePath);
+                discoveryWalker.Visit(tree.GetRoot());
+            }
 
             // ── Pass 2: Rewrite ────────────────────────────────────────────
             // Walk the tree again, replacing identifiers, comments, and string literals.
-            var rewriter = new ObfuscationRewriter(semanticModel, context, filePath, warnings);
+            // In delegation-only mode, the rewriter skips identifier/comment rewrites
+            // and only processes SQL-in-strings delegation.
+            var rewriter = new ObfuscationRewriter(semanticModel, context, filePath, warnings, delegationOnly);
             var newRoot = rewriter.Visit(tree.GetRoot());
 
             var transformedContent = newRoot?.ToFullString() ?? content;
@@ -568,6 +575,7 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
         private readonly ObfuscationContext _context;
         private readonly string? _filePath;
         private readonly List<string> _warnings;
+        private readonly bool _delegationOnly;
 
         /// <summary>Total number of replacements made by this rewriter.</summary>
         public int ReplacementCount { get; private set; }
@@ -576,19 +584,23 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
             SemanticModel semanticModel,
             ObfuscationContext context,
             string? filePath,
-            List<string> warnings)
+            List<string> warnings,
+            bool delegationOnly = false)
             : base(visitIntoStructuredTrivia: true)
         {
             _semanticModel = semanticModel;
             _context = context;
             _filePath = filePath;
             _warnings = warnings;
+            _delegationOnly = delegationOnly;
         }
 
         // ── Identifier rewriting ───────────────────────────────────────
 
         public override SyntaxNode? VisitIdentifierName(IdentifierNameSyntax node)
         {
+            if (_delegationOnly) return base.VisitIdentifierName(node);
+
             var symbolInfo = _semanticModel.GetSymbolInfo(node);
             var symbol = symbolInfo.Symbol;
 
@@ -614,6 +626,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitGenericName(GenericNameSyntax node)
         {
+            if (_delegationOnly) return base.VisitGenericName(node);
+
             var symbolInfo = _semanticModel.GetSymbolInfo(node);
             var symbol = symbolInfo.Symbol;
 
@@ -699,6 +713,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
         {
+            if (_delegationOnly) return base.VisitConstructorDeclaration(node);
+
             // Constructor identifier must match the (renamed) class name.
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol?.ContainingType != null && IsUserDefined(symbol.ContainingType))
@@ -718,6 +734,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitDestructorDeclaration(DestructorDeclarationSyntax node)
         {
+            if (_delegationOnly) return base.VisitDestructorDeclaration(node);
+
             // Destructor identifier must match the (renamed) class name.
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol?.ContainingType != null && IsUserDefined(symbol.ContainingType))
@@ -751,6 +769,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitVariableDeclarator(VariableDeclaratorSyntax node)
         {
+            if (_delegationOnly) return base.VisitVariableDeclarator(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -770,6 +790,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitSingleVariableDesignation(SingleVariableDesignationSyntax node)
         {
+            if (_delegationOnly) return base.VisitSingleVariableDesignation(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -789,6 +811,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitParameter(ParameterSyntax node)
         {
+            if (_delegationOnly) return base.VisitParameter(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -807,6 +831,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitTypeParameter(TypeParameterSyntax node)
         {
+            if (_delegationOnly) return base.VisitTypeParameter(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -825,6 +851,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitForEachStatement(ForEachStatementSyntax node)
         {
+            if (_delegationOnly) return base.VisitForEachStatement(node);
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {
@@ -843,6 +871,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitCatchDeclaration(CatchDeclarationSyntax node)
         {
+            if (_delegationOnly) return base.VisitCatchDeclaration(node);
+
             if (node.Identifier != default)
             {
                 var symbol = _semanticModel.GetDeclaredSymbol(node);
@@ -866,6 +896,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitNamespaceDeclaration(NamespaceDeclarationSyntax node)
         {
+            if (_delegationOnly) return base.VisitNamespaceDeclaration(node);
+
             var newName = RewriteNamespaceName(node.Name);
             if (newName != node.Name)
             {
@@ -876,6 +908,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxNode? VisitFileScopedNamespaceDeclaration(FileScopedNamespaceDeclarationSyntax node)
         {
+            if (_delegationOnly) return base.VisitFileScopedNamespaceDeclaration(node);
+
             var newName = RewriteNamespaceName(node.Name);
             if (newName != node.Name)
             {
@@ -971,6 +1005,9 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
                     }
                 }
 
+                // In delegation-only mode, skip non-SQL string alias replacement
+                if (_delegationOnly) return base.VisitLiteralExpression(node);
+
                 var alias = _context.GetOrCreateAlias(text, SemanticCategory.StringLiteral, _filePath);
 
                 if (alias != text)
@@ -1033,6 +1070,9 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
                     }
                 }
 
+                // In delegation-only mode, skip non-SQL string alias replacement
+                if (_delegationOnly) return base.VisitInterpolatedStringText(node);
+
                 var alias = _context.GetOrCreateAlias(text, SemanticCategory.StringLiteral, _filePath);
 
                 if (alias != text)
@@ -1056,6 +1096,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
 
         public override SyntaxToken VisitToken(SyntaxToken token)
         {
+            if (_delegationOnly) return base.VisitToken(token);
+
             var newToken = token;
 
             if (token.HasLeadingTrivia)
@@ -1122,6 +1164,8 @@ public sealed class CSharpLanguageProcessor : ILanguageProcessor
             SyntaxToken identifier,
             Func<SyntaxNode, SyntaxToken, SyntaxNode> withIdentifier)
         {
+            if (_delegationOnly) return node;
+
             var symbol = _semanticModel.GetDeclaredSymbol(node);
             if (symbol != null && IsUserDefined(symbol))
             {

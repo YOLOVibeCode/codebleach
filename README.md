@@ -88,7 +88,29 @@ codebleach sanitize ./my-project --level 2
 # After:  DIR_0/DIR_1/CLS_0.cs
 ```
 
-### Use Case 3: Code Reviews and Documentation
+### Use Case 3: Selective Obfuscation with `--scope`
+
+**Problem:** You want to share a mixed-language codebase with an AI, but only care about protecting database schema names. You want COBOL and JCL code left readable so the AI can help with business logic.
+
+**Solution:** Use `--scope` to selectively obfuscate only specific code domains.
+
+```bash
+# Only obfuscate database identifiers (SQL table/column names)
+codebleach sanitize ~/projects/my-app --level 2 --scope database
+
+# Only obfuscate mainframe code (COBOL, JCL)
+codebleach sanitize ~/projects/my-app --level 2 --scope mainframe
+
+# Obfuscate both database and mainframe code
+codebleach sanitize ~/projects/my-app --level 2 --scope database,mainframe
+```
+
+When `--scope database` is used on a COBOL file with embedded SQL:
+- COBOL identifiers (PROGRAM-ID, paragraphs, variables) remain **unchanged**
+- SQL identifiers inside `EXEC SQL` blocks are **obfuscated** via cross-language delegation
+- The file structure stays readable for AI analysis of business logic
+
+### Use Case 4: Code Reviews and Documentation
 
 **Problem:** You need to create documentation or examples but don't want to expose internal infrastructure details.
 
@@ -107,6 +129,7 @@ codebleach sanitize ./examples --output ./examples-public
 - **📁 File Name Obfuscation** - Renames files and directories to prevent organizational fingerprinting (Level 2)
 - **🔗 Cross-File Reference Patching** - Updates imports, project references, and solution files after renames
 - **🌐 Cross-Language Delegation** - COBOL EXEC SQL and JCL instream SQL are delegated to the SQL processor
+- **🎯 Selective Scope Filtering** - `--scope` flag to obfuscate only specific code domains (e.g., `database`, `mainframe`) while leaving other code intact
 - **🎨 Custom Rules** - Add project-specific patterns via JSON (no recompilation)
 - **🌍 Global Configuration** - Define rules once, apply to all projects automatically
 - **🔄 Perfect Round-Trip** - Sanitize/Obfuscate -> AI Edit -> Restore with zero data loss
@@ -139,6 +162,9 @@ codebleach sanitize ~/projects/my-app --level 2
 
 # Level 2 with build verification
 codebleach sanitize ~/projects/my-app --level 2 --verify
+
+# Level 2 scoped to database identifiers only
+codebleach sanitize ~/projects/my-app --level 2 --scope database
 
 # Restore original values
 cd ~/projects/my-app-sanitize
@@ -329,6 +355,7 @@ codebleach sanitize <source-directory> [options]
 **Options:**
 - `--output, -o <path>` - Custom output directory (default: `<source>-sanitize`)
 - `--level, -l <1|2>` - Obfuscation level: 1=sanitize patterns (default), 2=full identifier obfuscation
+- `--scope <specifiers>` - Comma-separated scope filter to obfuscate only specific code domains (see [Scope Filtering](#-scope-filtering))
 - `--verify` - Build the output after obfuscation to verify correctness
 - `--dry-run, -n` - Preview changes without modifying files
 - `--verbose, -v` - Show detailed output with diffs
@@ -345,6 +372,12 @@ codebleach sanitize ./my-project --level 2
 
 # Full obfuscation with build verification
 codebleach sanitize ./my-project --level 2 --verify
+
+# Obfuscate only database identifiers
+codebleach sanitize ./my-project --level 2 --scope database
+
+# Obfuscate database + mainframe code
+codebleach sanitize ./my-project --level 2 --scope database,mainframe
 
 # Custom output location
 codebleach sanitize ./my-project --output ./clean-version
@@ -717,6 +750,103 @@ codebleach restore --verify
 
 # Standalone verification
 codebleach verify ./my-project-sanitize
+```
+
+## 🎯 Scope Filtering
+
+The `--scope` flag enables **selective obfuscation** — obfuscate only specific code domains while leaving the rest untouched. This is useful when you want to protect database schema names but keep business logic readable for AI analysis, or vice versa.
+
+### How It Works
+
+When `--scope` is active, each language processor runs in one of two modes:
+
+- **In-scope**: Full obfuscation — identical to running without `--scope`
+- **Delegation-only**: Parse the file's structure but leave its own identifiers unchanged. If the file contains embedded code from an in-scope language (e.g., SQL inside COBOL `EXEC SQL` blocks), that embedded code is still delegated and obfuscated.
+
+Without `--scope`, everything is obfuscated (fully backward compatible).
+
+### Groups and Processor IDs
+
+`--scope` accepts comma-separated **group names** and/or **individual processor IDs**:
+
+| Group | Processor IDs | Languages |
+|-------|--------------|-----------|
+| `database` | `tsql`, `db2sql`, `oraclesql` | T-SQL, DB2 SQL, Oracle SQL/PL-SQL |
+| `mainframe` | `cobol`, `jcl`, `mainframe-utility` | COBOL, JCL, Mainframe utilities |
+| `dotnet` | `csharp`, `vbnet`, `fsharp` | C#, VB.NET, F# |
+| `web` | `javascript` | JavaScript |
+| `scripting` | `vbscript` | VBScript/VBA |
+
+### Examples
+
+```bash
+# Obfuscate only SQL identifiers (table names, column names, etc.)
+codebleach sanitize ./my-project --level 2 --scope database
+
+# Obfuscate only mainframe code
+codebleach sanitize ./my-project --level 2 --scope mainframe
+
+# Combine groups
+codebleach sanitize ./my-project --level 2 --scope database,mainframe
+
+# Use individual processor IDs
+codebleach sanitize ./my-project --level 2 --scope tsql,cobol
+
+# Mix groups and IDs
+codebleach sanitize ./my-project --level 2 --scope database,cobol
+```
+
+### Cross-Language Delegation with Scope
+
+The real power of `--scope` is how it interacts with cross-language delegation. When a file contains embedded code from a different language, the embedded code is still processed if its language is in scope:
+
+**`--scope database` on a COBOL file with EXEC SQL:**
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. EMPLOOKUP.              <-- unchanged (COBOL out of scope)
+       PROCEDURE DIVISION.
+       LOOKUP-EMPLOYEE.                     <-- unchanged
+           EXEC SQL
+             SELECT EMPLOYEE_NAME           <-- SQL identifiers obfuscated
+             FROM EMPLOYEE_MASTER           <-- SQL identifiers obfuscated
+             WHERE EMP_ID = :WS-EMP-ID      <-- host var unchanged (COBOL)
+           END-EXEC
+```
+
+**`--scope database` on a C# file with SQL strings:**
+```csharp
+namespace AccountingApp                     // unchanged (C# out of scope)
+{
+    public class EmployeeRepository         // unchanged
+    {
+        var sql = "SELECT ... FROM TBL_0";  // SQL in strings obfuscated
+    }
+}
+```
+
+**`--scope mainframe` on the same COBOL file:**
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. PGM_0.                  <-- obfuscated (COBOL in scope)
+       PROCEDURE DIVISION.
+       PARA_0.                              <-- obfuscated
+           EXEC SQL
+             SELECT EMPLOYEE_NAME           <-- unchanged (SQL out of scope)
+             FROM EMPLOYEE_MASTER           <-- unchanged
+           END-EXEC
+```
+
+### File Renaming with Scope
+
+When `--scope` is active, only files whose primary processor is in scope get renamed. Out-of-scope files keep their original names. This ensures you can still navigate the project structure for code that wasn't obfuscated.
+
+### Level 1 with Scope
+
+`--scope` also works with Level 1 (regex-based) sanitization. When combined with `--scope`, only files whose extension maps to an in-scope processor receive regex processing. Other files are copied unchanged.
+
+```bash
+# Level 1, only process SQL files
+codebleach sanitize ./my-project --level 1 --scope database
 ```
 
 ## 📋 File Types Supported

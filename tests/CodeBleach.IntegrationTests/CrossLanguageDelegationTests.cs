@@ -256,10 +256,11 @@ public class CrossLanguageDelegationTests
     }
 
     [Fact]
-    public void CobolDb2_WithoutRegistry_HostVarsReplacedButSqlUnchanged()
+    public void CobolDb2_WithoutRegistry_HostVarsAndSqlIdentifiersBothReplaced()
     {
         var processor = new CobolLanguageProcessor();
-        // Context without registry — delegation should not fire
+        // Context without registry — SQL delegation won't fire, but fallback aliasMap
+        // replacement ensures SQL identifiers are still obfuscated
         var context = new ObfuscationContext(ObfuscationLevel.Full);
         var cobol = BuildCobolSource(
             "       IDENTIFICATION DIVISION.",
@@ -278,11 +279,11 @@ public class CrossLanguageDelegationTests
         var result = processor.Obfuscate(cobol, context, "noreg.cbl");
 
         result.WasTransformed.Should().BeTrue();
-        // Host variables should still be renamed (COBOL-level processing)
+        // Host variables should be renamed (COBOL-level processing)
         result.Content.Should().NotContain(":WS-VALUE");
-        // But SQL body identifiers should remain untouched (no delegation without registry)
-        result.Content.Should().Contain("COLUMN_A");
-        result.Content.Should().Contain("TABLE_B");
+        // SQL identifiers are also replaced via aliasMap fallback (discovered in Pass 1.5)
+        result.Content.Should().NotContain("COLUMN_A");
+        result.Content.Should().NotContain("TABLE_B");
     }
 
     [Fact]
